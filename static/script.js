@@ -1,10 +1,6 @@
-function sendMessage() {
-    var userInput = document.getElementById('user-input').value;
-    // Clear input box
-    document.getElementById('user-input').value = '';
-
+function sendMessage(userInput, assistant_name) {
     // Append user message to chat
-    var chatBox = document.getElementById('chat-box');
+    var chatBox = document.getElementById('chatbox');
     chatBox.innerHTML += '<div class="user-message">' + userInput + '</div>';
 
     // Send message to Flask server
@@ -18,7 +14,9 @@ function sendMessage() {
     .then(response => response.json())
     .then(data => {
         // Append AI response to chat
-        chatBox.innerHTML += '<div class="ai-message">' + data.reply + '</div>';
+        var converter = new showdown.Converter();
+        var html = converter.makeHtml(data.reply); // Convert markdown to HTML
+        chatBox.innerHTML += `<div class="ai-message" data-name="${assistant_name}">${html}</div>`;
     });
 }
 

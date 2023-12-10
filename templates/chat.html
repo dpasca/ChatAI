@@ -1,18 +1,77 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Chat with AI</title>
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <div id="chat-container">
-        <div id="chat-box">
-            <!-- Chat messages will be appended here -->
-        </div>
-        <input type="text" id="user-input" placeholder="Type a message...">
-        <button onclick="sendMessage()">Send</button>
-    </div>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
-</body>
-</html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
+    <!-- Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" type="text/css" href="/static/style.css">
+
+    <title>Chat with {{ assistant_name }}</title>
+  </head>
+  <body>
+    <div class="container">
+      <div class="row">
+        <div class="col-md-6 offset-md-3">
+          <h1 class="text-center">Chat with {{ assistant_name }}</h1>
+          <div id="chatbox">
+            <!-- Chat messages will be added here -->
+          </div>
+          <div class="input-group">
+            <textarea class="form-control" id="user-input" placeholder="Type a message..."></textarea>
+            <div class="input-group-append">
+              <button class="btn btn-primary" id="send-button">Send</button>
+            </div>
+          </div>
+          <p class="input-notice">Use Shift+Enter to insert a new line</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Optional JavaScript -->
+    <!-- jQuery first, then Popper.js, then Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/showdown/dist/showdown.min.js"></script>
+    <script src="static/script.js"></script>
+
+    <script>
+    $(document).ready(function() {
+    $('#send-button').click(function() {
+        var userInput = $('#user-input').val();
+
+        var converter = new showdown.Converter();
+        var html = converter.makeHtml(userInput); // Convert markdown to HTML
+
+        // Log the user input in the console
+        //console.log('User Input: ' + userInput);
+        if (userInput) {
+           var assistant_name = "{{ assistant_name }}"; // Get the assistant name from Flask
+           sendMessage(userInput, assistant_name); // Send the user message
+           $('#user-input').val('');  // Clear the input field
+        }
+    });
+    $('#user-input').keypress(function(e) {
+        if (e.which == 13) { // Enter key
+            if (e.shiftKey) { // Shift key
+                e.preventDefault(); // Prevents the default action to be triggered (newline)
+                var cursorPos = this.selectionStart;
+                var value = $(this).val();
+                var textBefore = value.substring(0, cursorPos);
+                var textAfter = value.substring(cursorPos, value.length);
+                $(this).val(textBefore + "\n" + textAfter);
+            } else {
+                e.preventDefault(); // Prevents the default action to be triggered (newline)
+                $('#send-button').click(); // Triggers sending the message
+            }
+        }
+    });
+    });
+    </script>
+  </body>
+</html>

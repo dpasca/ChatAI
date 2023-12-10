@@ -1,14 +1,56 @@
-/* Add your CSS styling here */
-#chat-container {
-    width: 300px;
-    margin: auto;
-    border: 1px solid black;
-    padding: 10px;
-}
-
-.user-message, .ai-message {
-    margin-bottom: 10px;
+.ai-message {
+    background-color: #d0d0d0; /* Change to your preferred color */
+    color: black; /* Change to your preferred color */
     padding: 5px;
     border: 1px solid #ddd;
+    margin-bottom: 10px;
+    position: relative;
 }
 
+.ai-message::before {
+    content: attr(data-name);
+    position: absolute;
+    top: -20px;
+    right: 10px;
+    background-color: #d0d0d0; /* Change to your preferred color */
+    padding: 2px 5px;
+    border-radius: 2px;
+    color: black; /* Change to your preferred color */
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.user-message {
+    background-color: #a0a0a0; /* Change to your preferred color */
+    color: white; /* Change to your preferred color */
+    padding: 5px;
+    border: 1px solid #ddd;
+    margin-bottom: 10px;
+    position: relative;
+}
+
+/*
+.user-message::before {
+    content: "Me";
+    position: absolute;
+    top: -20px;
+    left: 10px;
+    background-color: #a0a0a0;
+    padding: 2px 5px;
+    border-radius: 2px;
+    color: white;
+    font-size: 0.8rem;
+}
+*/
+#user-input {
+    height: 5em;
+}
+
+.input-notice {
+    font-size: 0.8rem;
+    color: #888;
+    margin-top: 0.5em;
+    font-style: italic;
+    /* some indentation */
+    padding-left: 1em;
+}
