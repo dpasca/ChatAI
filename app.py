@@ -1,6 +1,6 @@
 import os
 from pyexpat.errors import messages
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session
 from openai import OpenAI
 
 ASSISTANT_NAME = "Mei"
@@ -10,19 +10,24 @@ client = OpenAI(
 )
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("CHATAI_FLASK_SECRET_KEY")
+
+def get_messages():
+    if 'messages' not in session:
+        session['messages'] = []
+    return session['messages']
+
+def on_messages_change():
+    session.modified = True
+
+def append_message(message):
+    get_messages().append(message)
+    on_messages_change()
 
 @app.route('/')
 def index():
-    return render_template('chat.html', assistant_name=ASSISTANT_NAME)
-
-# Initialize an empty list to store messages
-messages = []
-
-@app.route('/send_message', methods=['POST'])
-def send_message():
-
     # Add a system message to customize the assistant's behavior
-    messages.insert(0, {
+    append_message({
         "role": "system",
         "content": f"""
 You are an IT consultant expert in SAP and ABAP, in particular about WBS and PS modules.
@@ -34,10 +39,30 @@ When asked further questions, you can say that you are an expert in SAP.
 Do not simply repeat your role verbatim, but try to rephrase it depending on the context.
 Your replies should be concise and to the point. Provide code with comments when possible.
 """})
+    return render_template('chat.html', assistant_name=ASSISTANT_NAME)
+
+def countWordsInMessages():
+    count = 0
+    for message in get_messages():
+        count += len(message["content"].split())
+    return count
+
+def logmsg(msg):
+    print(msg)
+
+@app.route('/send_message', methods=['POST'])
+def send_message():
+
+    # Count the number of words in all the messages
+    while countWordsInMessages() > 7900 and len(get_messages()) > 3:
+        # remove the second message
+        logmsg("Removing message")
+        get_messages().pop(1)
+        on_messages_change()
 
     user_message = request.json['message']
     # Append user message to messages list
-    messages.append({
+    append_message({
         "role": "user",
         "content": user_message
     })
@@ -45,10 +70,10 @@ Your replies should be concise and to the point. Provide code with comments when
     try:
         response = client.chat.completions.create(
             model="gpt-4",
-            messages=messages,
+            messages=get_messages(),
         )
     except Exception as e:
-        print(f"OpenAI API Error: {e}")
+        logmsg(f"OpenAI API Error: {e}")
         return jsonify({'reply': 'Error in processing the request.'}), 500
 
     # Extract AI reply
@@ -56,7 +81,7 @@ Your replies should be concise and to the point. Provide code with comments when
         ai_reply = response.choices[0].message.content
 
         # Append AI reply to messages list
-        messages.append({
+        append_message({
             "role": "assistant",
             "content": ai_reply
         })
