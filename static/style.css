@@ -1,20 +1,16 @@
 .header {
-    position: relative;
-}
-.header h1 {
-    margin-bottom: -0.2em;
+    font-size: medium;
+    font-style: bold;
 }
 .version-date {
-    font-size: 0.6em;
+    font-size: 0.3em;
     color: #888;
-    margin-top: -0.2em;
-    margin-bottom: 0.6em;
 }
 
 .ai-message {
     background-color: #d0d0d0; /* Change to your preferred color */
     color: black; /* Change to your preferred color */
-    padding: 5px;
+    padding: 7px;
     border: 1px solid #ddd;
     margin-bottom: 10px;
     position: relative;
@@ -48,7 +44,7 @@
 .user-message {
     background-color: #a0a0a0; /* Change to your preferred color */
     color: white; /* Change to your preferred color */
-    padding: 5px;
+    padding: 7px;
     border: 1px solid #ddd;
     margin-bottom: 10px;
     position: relative;

@@ -51,7 +51,7 @@ def index():
                 'chat.html',
                 assistant_name=ASSISTANT_NAME,
                 messages=get_messages(),
-                version_date=version_date)
+                app_version=config["app_version"])
 
 #===============================================================================
 def countWordsInMessages():
@@ -82,7 +82,7 @@ def send_message():
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
+            model=config["model_version"],
             #model="gpt-3.5-turbo",
             messages=get_messages(),
         )
