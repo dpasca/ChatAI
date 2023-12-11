@@ -73,9 +73,6 @@
         $('#send-button').click(function() {
           var userInput = $('#user-input').val();
 
-          var converter = new showdown.Converter();
-          var html = converter.makeHtml(userInput); // Convert markdown to HTML
-
           // Log the user input in the console
           //console.log('User Input: ' + userInput);
           if (userInput) {

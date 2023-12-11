@@ -7,6 +7,18 @@
     position: relative;
 }
 
+/* Waiting animation */
+@keyframes waiting {
+    0% { content: '...'; }
+    33% { content: '.. '; }
+    66% { content: '.  '; }
+    100% { content: '...'; }
+}
+.waiting-message::after {
+    content: '...';
+    animation: waiting 1s steps(3, end) infinite;
+}
+
 .ai-message::before {
     content: attr(data-name);
     position: absolute;
@@ -27,6 +39,11 @@
     border: 1px solid #ddd;
     margin-bottom: 10px;
     position: relative;
+}
+
+/* A little rounding of the corners of the messages */
+.user-message, .ai-message {
+    border-radius: 10px;
 }
 
 /*
