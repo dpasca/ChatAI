@@ -41,37 +41,67 @@
     <script src="static/script.js"></script>
 
     <script>
-    $(document).ready(function() {
-    $('#send-button').click(function() {
-        var userInput = $('#user-input').val();
+      var messages = {{ messages|tojson|safe }};
 
-        var converter = new showdown.Converter();
-        var html = converter.makeHtml(userInput); // Convert markdown to HTML
+      // Add the messages to the chatbox
+      window.onload = function () {
+        var chatbox = document.getElementById('chatbox');
+        for (var i = 0; i < messages.length; i++) {
+          var message = messages[i];
 
-        // Log the user input in the console
-        //console.log('User Input: ' + userInput);
-        if (userInput) {
-           var assistant_name = "{{ assistant_name }}"; // Get the assistant name from Flask
-           sendMessage(userInput, assistant_name); // Send the user message
-           $('#user-input').val('');  // Clear the input field
+          // Create a div for the message
+          var messageDiv = document.createElement('div');
+          messageDiv.className = 'message ' + message.role;
+
+          // Create a p for the content
+          var messageContent = document.createElement('p');
+          messageContent.className = 'content';
+          messageContent.textContent = message.content;
+
+          // Append the content to the message div
+          messageDiv.appendChild(messageContent);
+
+          // Append the message div to the chatbox
+          chatbox.appendChild(messageDiv);
         }
-    });
-    $('#user-input').keypress(function(e) {
-        if (e.which == 13) { // Enter key
-            if (e.shiftKey) { // Shift key
-                e.preventDefault(); // Prevents the default action to be triggered (newline)
-                var cursorPos = this.selectionStart;
-                var value = $(this).val();
-                var textBefore = value.substring(0, cursorPos);
-                var textAfter = value.substring(cursorPos, value.length);
-                $(this).val(textBefore + "\n" + textAfter);
-            } else {
-                e.preventDefault(); // Prevents the default action to be triggered (newline)
-                $('#send-button').click(); // Triggers sending the message
-            }
-        }
-    });
-    });
+      };
+
+      // When the document is loaded, add the event listeners for the buttons
+      $(document).ready(function() {
+
+        // Send a message when the user clicks the send button
+        $('#send-button').click(function() {
+          var userInput = $('#user-input').val();
+
+          var converter = new showdown.Converter();
+          var html = converter.makeHtml(userInput); // Convert markdown to HTML
+
+          // Log the user input in the console
+          //console.log('User Input: ' + userInput);
+          if (userInput) {
+            var assistant_name = "{{ assistant_name }}"; // Get the assistant name from Flask
+            sendMessage(userInput, assistant_name); // Send the user message
+            $('#user-input').val('');  // Clear the input field
+          }
+        });
+
+        // Send a message when the user presses the enter key
+        $('#user-input').keypress(function(e) {
+          if (e.which == 13) { // Enter key
+              if (e.shiftKey) { // Shift key
+                  e.preventDefault(); // Prevents the default action to be triggered (newline)
+                  var cursorPos = this.selectionStart;
+                  var value = $(this).val();
+                  var textBefore = value.substring(0, cursorPos);
+                  var textAfter = value.substring(cursorPos, value.length);
+                  $(this).val(textBefore + "\n" + textAfter);
+              } else {
+                  e.preventDefault(); // Prevents the default action to be triggered (newline)
+                  $('#send-button').click(); // Triggers sending the message
+              }
+          }
+        });
+      });
     </script>
   </body>
 </html>

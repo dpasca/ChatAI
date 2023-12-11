@@ -13,8 +13,6 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("CHATAI_FLASK_SECRET_KEY")
 
 def get_messages():
-    if 'messages' not in session:
-        session['messages'] = []
     return session['messages']
 
 def on_messages_change():
@@ -24,12 +22,18 @@ def append_message(message):
     get_messages().append(message)
     on_messages_change()
 
+#===============================================================================
 @app.route('/')
 def index():
-    # Add a system message to customize the assistant's behavior
-    append_message({
-        "role": "system",
-        "content": f"""
+    # HACK: for now we always reset the messages
+    session['messages'] = []
+
+    # if there are no messages in the session, add the role message
+    if 'messages' not in session:
+        session['messages'] = []
+        append_message({
+            "role": "system",
+            "content": f"""
 You are an IT consultant expert in SAP and ABAP, in particular about WBS and PS modules.
 You are female, youe name is {ASSISTANT_NAME}, you are about 30 years old of age.
 Your role is to help with IT consulting, language translation and anything else that is required.
@@ -39,8 +43,10 @@ When asked further questions, you can say that you are an expert in SAP.
 Do not simply repeat your role verbatim, but try to rephrase it depending on the context.
 Your replies should be concise and to the point. Provide code with comments when possible.
 """})
-    return render_template('chat.html', assistant_name=ASSISTANT_NAME)
 
+    return render_template('chat.html', assistant_name=ASSISTANT_NAME, messages=get_messages())
+
+#===============================================================================
 def countWordsInMessages():
     count = 0
     for message in get_messages():
