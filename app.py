@@ -1,8 +1,10 @@
 import os
 import json
+import time
 from pyexpat.errors import messages
 from flask import Flask, render_template, request, jsonify, session
 from openai import OpenAI
+import datetime
 
 # Load configuration from config.json
 with open('config.json') as f:
@@ -42,7 +44,14 @@ def index():
         session['messages'] = []
         append_message({"role": "system", "content": ASSISTANT_ROLE})
 
-    return render_template('chat.html', assistant_name=ASSISTANT_NAME, messages=get_messages())
+    # Get the last modified date of app.py
+    version_date = datetime.datetime.fromtimestamp(os.path.getmtime(__file__)).strftime('%Y-%m-%d %H:%M')
+
+    return render_template(
+                'chat.html',
+                assistant_name=ASSISTANT_NAME,
+                messages=get_messages(),
+                version_date=version_date)
 
 #===============================================================================
 def countWordsInMessages():

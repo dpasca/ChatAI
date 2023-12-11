@@ -1,3 +1,16 @@
+.header {
+    position: relative;
+}
+.header h1 {
+    margin-bottom: -0.2em;
+}
+.version-date {
+    font-size: 0.6em;
+    color: #888;
+    margin-top: -0.2em;
+    margin-bottom: 0.6em;
+}
+
 .ai-message {
     background-color: #d0d0d0; /* Change to your preferred color */
     color: black; /* Change to your preferred color */

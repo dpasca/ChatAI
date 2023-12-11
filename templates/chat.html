@@ -17,7 +17,10 @@
     <div class="container">
       <div class="row">
         <div class="col-md-6 offset-md-3">
-          <h1 class="text-center">Chat with {{ assistant_name }}</h1>
+          <div class="header">
+              <h1>Chat with {{ assistant_name }}</h1>
+              <small class="version-date">(Last update: {{ version_date }})</small>
+          </div>
           <div id="chatbox">
             <!-- Chat messages will be added here -->
           </div>
