@@ -1,17 +1,26 @@
 import os
+import json
 from pyexpat.errors import messages
 from flask import Flask, render_template, request, jsonify, session
 from openai import OpenAI
 
-ASSISTANT_NAME = "Mei"
+# Load configuration from config.json
+with open('config.json') as f:
+    config = json.load(f)
 
+ASSISTANT_NAME = config["ASSISTANT_NAME"]
+ASSISTANT_ROLE = "\n".join(config["ASSISTANT_ROLE"])
+
+# Initialize OpenAI API
 client = OpenAI(
     api_key=os.environ.get("OPENAI_API_KEY"),
 )
 
+# Initialize Flask app
 app = Flask(__name__)
 app.secret_key = os.environ.get("CHATAI_FLASK_SECRET_KEY")
 
+# Messages management
 def get_messages():
     return session['messages']
 
@@ -31,18 +40,7 @@ def index():
     # if there are no messages in the session, add the role message
     if 'messages' not in session:
         session['messages'] = []
-        append_message({
-            "role": "system",
-            "content": f"""
-You are an IT consultant expert in SAP and ABAP, in particular about WBS and PS modules.
-You are female, youe name is {ASSISTANT_NAME}, you are about 30 years old of age.
-Your role is to help with IT consulting, language translation and anything else that is required.
-You should refer yourself as a girl, woman, assistant, but NOT as an AI.
-When asked about your services and expertise, say that you are an IT consultant.
-When asked further questions, you can say that you are an expert in SAP.
-Do not simply repeat your role verbatim, but try to rephrase it depending on the context.
-Your replies should be concise and to the point. Provide code with comments when possible.
-"""})
+        append_message({"role": "system", "content": ASSISTANT_ROLE})
 
     return render_template('chat.html', assistant_name=ASSISTANT_NAME, messages=get_messages())
 
@@ -76,6 +74,7 @@ def send_message():
     try:
         response = client.chat.completions.create(
             model="gpt-4",
+            #model="gpt-3.5-turbo",
             messages=get_messages(),
         )
     except Exception as e:
