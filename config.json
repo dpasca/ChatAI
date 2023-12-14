@@ -1,5 +1,5 @@
 {
-    "app_version": "0.0.2",
+    "app_version": "0.0.3",
     "model_version": "gpt-4-1106-preview",
     "ASSISTANT_NAME": "Mei",
     "ASSISTANT_ROLE": [
