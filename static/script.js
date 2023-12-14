@@ -14,10 +14,34 @@ function appendAssistMessage(assistant_name, message) {
     var chatBox = document.getElementById('chatbox');
     chatBox.innerHTML += `<div class="ai-message" data-name="${assistant_name}">${html}</div>`;
 }
+
 function appendWaitingAssistMessage(assistant_name) {
     var chatBox = document.getElementById('chatbox');
-    chatBox.innerHTML += `<div class="ai-message waiting-message" data-name="${assistant_name}"></div>`;
+    var typingDots = '';
+
+    // Create typing dots based on numDots parameter
+    var numDots = 4;
+    for (let i = 0; i < numDots; i++) {
+        typingDots += '<span>.</span>';
+    }
+
+    var typingIndicator = `<div class="ai-message" data-name="${assistant_name}">`;
+    typingIndicator += `<b>${assistant_name}</b> is typing<span class="typing-dots">${typingDots}</span>`;
+    typingIndicator += `</div>`;
+    chatBox.innerHTML += typingIndicator;
+
+    // Animate dots
+    let dots = document.querySelector('.typing-dots').children;
+    let dotIndex = 0;
+    setInterval(() => {
+        for (let dot of dots) {
+            dot.style.opacity = '0.2';
+        }
+        dots[dotIndex].style.opacity = '1';
+        dotIndex = (dotIndex + 1) % dots.length;
+    }, 500);
 }
+
 function removeAssistMessage() {
     var chatBox = document.getElementById('chatbox');
     var aiMessage = chatBox.getElementsByClassName('ai-message');

@@ -26,18 +26,6 @@
     position: relative;
 }
 
-/* Waiting animation */
-@keyframes waiting {
-    0% { content: '...'; }
-    33% { content: '.. '; }
-    66% { content: '.  '; }
-    100% { content: '...'; }
-}
-.waiting-message::after {
-    content: '...';
-    animation: waiting 1s steps(3, end) infinite;
-}
-
 .ai-message::before {
     content: attr(data-name);
     position: absolute;
@@ -49,6 +37,12 @@
     color: black; /* Change to your preferred color */
     font-size: 0.8rem;
     font-weight: bold;
+}
+
+.typing-dots {
+    margin-left: 0.2em;
+    font-size: large;
+    font-family: monospace;
 }
 
 .user-message {
