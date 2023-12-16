@@ -31,13 +31,32 @@
             </div>
           </div>
           <div class="footer-info">
-            <p class="input-notice">Use Shift+Enter to insert a new line</p>
+            <p id="input-notice" class="input-notice">Use Shift+Enter to insert a new line</p>
             <p class="version-text">v {{ app_version }}</p>
           </div>
+
+          <script>
+            function isMobileDevice() {
+              return /Mobi|Android/i.test(navigator.userAgent);
+            }
+
+            document.addEventListener('DOMContentLoaded', (event) => {
+              console.log("DOM fully loaded and parsed");
+
+              // Check if it's likely a mobile device
+              if (!isMobileDevice()) {
+                console.log("Not a mobile device, showing input notice");
+                document.getElementById('input-notice').style.display = 'block';
+              } else {
+                console.log("Mobile device detected, hiding input notice");
+                document.getElementById('input-notice').style.display = 'none';
+              }
+            });
+          </script>
+
         </div>
       </div>
     </div>
-
 
     <!-- Optional JavaScript -->
     <!-- jQuery first, then Popper.js, then Bootstrap JS -->
