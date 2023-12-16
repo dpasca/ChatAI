@@ -13,6 +13,9 @@ function appendAssistMessage(assistant_name, message) {
     var html = converter.makeHtml(message); // Convert markdown to HTML
     var chatBox = document.getElementById('chatbox');
     chatBox.innerHTML += `<div class="ai-message" data-name="${assistant_name}">${html}</div>`;
+
+    // Activate the erase button
+    document.getElementById('erase-button').style.display = 'block';
 }
 
 function appendWaitingAssistMessage(assistant_name) {

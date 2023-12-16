@@ -24,6 +24,8 @@
           <div id="chatbox">
             <!-- Chat messages will be added here -->
           </div>
+          <!-- Add this button above your input field -->
+          <button id="erase-button" class="btn btn-warning btn-sm">Erase Chat</button>
           <div class="input-group">
             <textarea class="form-control" id="user-input" placeholder="Type a message..."></textarea>
             <div class="input-group-append">
@@ -36,21 +38,26 @@
           </div>
 
           <script>
+            // Check if it's likely a mobile device
             function isMobileDevice() {
               return /Mobi|Android/i.test(navigator.userAgent);
             }
 
+            // When the DOM is fully loaded...
             document.addEventListener('DOMContentLoaded', (event) => {
-              console.log("DOM fully loaded and parsed");
+              //console.log("DOM fully loaded and parsed");
 
               // Check if it's likely a mobile device
               if (!isMobileDevice()) {
-                console.log("Not a mobile device, showing input notice");
+                //console.log("Not a mobile device, showing input notice");
                 document.getElementById('input-notice').style.display = 'block';
               } else {
-                console.log("Mobile device detected, hiding input notice");
+                //console.log("Mobile device detected, hiding input notice");
                 document.getElementById('input-notice').style.display = 'none';
               }
+
+              // Erase button hidden by default
+              document.getElementById('erase-button').style.display = 'none';
             });
           </script>
 
@@ -71,29 +78,42 @@
 
       // Add the messages to the chatbox
       window.onload = function () {
+        //console.log("Window loaded");
         var chatbox = document.getElementById('chatbox');
         for (var i = 0; i < messages.length; i++) {
           var message = messages[i];
 
-          // Create a div for the message
-          var messageDiv = document.createElement('div');
-          messageDiv.className = 'message ' + message.role;
-
-          // Create a p for the content
-          var messageContent = document.createElement('p');
-          messageContent.className = 'content';
-          messageContent.textContent = message.content;
-
-          // Append the content to the message div
-          messageDiv.appendChild(messageContent);
-
-          // Append the message div to the chatbox
-          chatbox.appendChild(messageDiv);
+          if (message.role == 'user') {
+            appendUserMessage(message.content);
+          }
+          else if (message.role == 'assistant') {
+            appendAssistMessage("{{ assistant_name }}", message.content);
+          }
+          else {
+            console.error('Unknown message role: ' + message.role);
+          }
         }
+
+        // Scroll to the bottom of the chatbox
+        var chatbox = document.getElementById('chatbox');
+        chatbox.scrollTop = chatbox.scrollHeight;
+
+        // Focus on the input field
+        document.getElementById('user-input').focus();
       };
 
       // When the document is loaded, add the event listeners for the buttons
       $(document).ready(function() {
+
+        // Erase the chat when the user clicks the erase button
+        $('#erase-button').click(function () {
+          fetch('/clear_chat', { method: 'POST' })
+            .then(function () {
+              $('#chatbox').html('');
+              // Hide the erase button
+              document.getElementById('erase-button').style.display = 'none';
+            });
+        });
 
         // Send a message when the user clicks the send button
         $('#send-button').click(function() {

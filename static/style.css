@@ -74,6 +74,10 @@
 */
 #user-input {
     height: 5em;
+    margin-top: 0.3em;
+}
+#send-button {
+    margin-top: 0.3em;
 }
 
 .input-notice {

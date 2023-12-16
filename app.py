@@ -2,7 +2,7 @@ import os
 import json
 import time
 from pyexpat.errors import messages
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, redirect, render_template, request, jsonify, session, url_for
 from openai import OpenAI
 import datetime
 
@@ -34,15 +34,24 @@ def append_message(message):
     on_messages_change()
 
 #===============================================================================
+@app.route('/clear_chat', methods=['POST'])
+def clear_chat():
+    session['messages'] = []
+    return redirect(url_for('index'))
+
+#===============================================================================
 @app.route('/')
 def index():
     # HACK: for now we always reset the messages
-    session['messages'] = []
+    #session['messages'] = []
 
     # if there are no messages in the session, add the role message
     if 'messages' not in session:
+        logmsg("Adding role message")
         session['messages'] = []
         append_message({"role": "system", "content": ASSISTANT_ROLE})
+    else:
+        logmsg("Messages already in session")
 
     # Get the last modified date of app.py
     version_date = datetime.datetime.fromtimestamp(os.path.getmtime(__file__)).strftime('%Y-%m-%d %H:%M')
