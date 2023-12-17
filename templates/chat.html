@@ -84,17 +84,7 @@
         //console.log("Window loaded");
         var chatbox = document.getElementById('chatbox');
         for (var i = 0; i < messages.length; i++) {
-          var message = messages[i];
-
-          if (message.role == 'user') {
-            appendUserMessage(message.content);
-          }
-          else if (message.role == 'assistant') {
-            appendAssistMessage("{{ assistant_name }}", message.content);
-          }
-          else {
-            console.error('Unknown message role: ' + message.role);
-          }
+          appendMessage(messages[i], "{{ assistant_name }}");
         }
 
         // Scroll to the bottom of the chatbox

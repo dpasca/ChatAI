@@ -1,21 +1,37 @@
-// Append user message to chat
-function appendUserMessage(message) {
-    var chatBox = document.getElementById('chatbox');
-    // Convert markdown to HTML, only for display
-    var converter = new showdown.Converter();
-    var html = converter.makeHtml(message);
-    chatBox.innerHTML += `<div class="user-message">${html}</div>`;
-}
 
-// Append assistant message to chat
-function appendAssistMessage(assistant_name, message) {
-    var converter = new showdown.Converter();
-    var html = converter.makeHtml(message); // Convert markdown to HTML
-    var chatBox = document.getElementById('chatbox');
-    chatBox.innerHTML += `<div class="ai-message" data-name="${assistant_name}">${html}</div>`;
+function appendMessage(message, assistant_name) {
+    if (message === null || typeof message !== 'object') {
+        console.error("Unknown message format for:", message);
+        return;
+    }
 
-    // Activate the erase button
-    document.getElementById('erase-button').style.display = 'block';
+    var chatBox = document.getElementById('chatbox');
+
+    messageHTML = '';
+
+    if (message.role == 'user') {
+        messageHTML += `<div class="user-message">`;
+    } else if (message.role == 'assistant') {
+        messageHTML += `<div class="ai-message" data-name="${assistant_name}">`;
+    }
+    else {
+        messageHTML += `<div>Unknown role: ${message.role}</div>`;
+        console.error("Unknown role:", message.role);
+        return;
+    }
+
+    if (message.content_type == 'text') {
+        // Convert markdown to HTML, only for display
+        var converter = new showdown.Converter();
+        messageHTML += converter.makeHtml(message.content);
+    } else {
+        messageHTML += `${message.content_type}: ${message.content}`;
+    }
+    messageHTML += '</div>';
+
+    console.log("Appending message:", messageHTML);
+
+    chatBox.innerHTML += messageHTML;
 }
 
 function appendWaitingAssistMessage(assistant_name) {
@@ -75,7 +91,12 @@ function sendMessage(userInput, assistant_name) {
         }
     })
     // Get response from Flask server
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
     // Append response to chat
     .then(data => {
         //console.log("Processed data: ", data);
@@ -83,16 +104,16 @@ function sendMessage(userInput, assistant_name) {
         // Remove the waiting message
         removeAssistMessage();
 
+        if (data.replies.length == 0) {
+            return;
+        }
+
         inputBox.disabled = false; // Enable input box
         sendButton.disabled = false; // Enable send button
-        //appendAssistMessage(assistant_name, data.reply);
-        for (let message of data.reply) {
+        
+        for (let message of data.replies) {
             //console.log("Appending message:", message);
-            if (typeof message === 'string') {
-                appendAssistMessage(assistant_name, message);
-            } else {
-                //console.error("Received non-string message:", message);
-            }
+            appendMessage(message, assistant_name);
         }
     });
 }

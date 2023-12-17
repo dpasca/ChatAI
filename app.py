@@ -8,6 +8,9 @@ import datetime
 import hashlib
 import inspect
 
+# References:
+# - https://cookbook.openai.com/examples/assistants_api_overview_python
+
 # Load configuration from config.json
 with open('config.json') as f:
     config = json.load(f)
@@ -92,15 +95,25 @@ def append_loc_message(message):
 
 def message_to_dict(message):
     #show_json(message)
-    content_text = ""
     for content in message.content:
         if content.type == "text":
-            content_text = content.text.value
+            return {
+                "role": message.role,
+                "content": content.text.value,
+                "content_type": content.type
+            } 
+        elif content.type == "image_file":
+            return {
+                "role": message.role,
+                "content": content.image_file.file_id,
+                "content_type": content.type
+            } 
 
     return {
         "role": message.role,
-        "content": content_text
-    } 
+        "content": "<Unknown content type>",
+        "content_type": "text"
+    }
 
 #===============================================================================
 @app.route('/clear_chat', methods=['POST'])
@@ -180,22 +193,22 @@ def send_message():
     )
     logmsg(f"Received {len(new_messages.data)} new messages")
 
-    plain_replies = []
+    replies = []
     for msg in new_messages.data:
         # Append message to messages list
         message_dict = message_to_dict(msg)
         append_loc_message(message_dict)
         # We only want the content of the message
-        plain_replies.append(message_dict["content"])
+        replies.append(message_dict["content"])
 
-    logmsg(f"Replies: {plain_replies}")
+    logmsg(f"Replies: {replies}")
 
-    if len(plain_replies) > 0:
-        logmsg(f"Sending {len(plain_replies)} replies")
-        return jsonify({'reply': plain_replies}), 200
+    if len(replies) > 0:
+        logmsg(f"Sending {len(replies)} replies")
+        return jsonify({'replies': replies}), 200
     else:
-        logmsg("Sending no reply")
-        return jsonify({'reply': ["*No reply*"]}), 200
+        logmsg("Sending no replies")
+        return jsonify({'replies': ["*No reply*"]}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
