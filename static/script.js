@@ -20,13 +20,17 @@ function appendMessage(message, assistant_name='') {
         return;
     }
 
-    if (message.content_type == 'text') {
-        // Convert markdown to HTML, only for display
-        var converter = new showdown.Converter();
-        messageHTML += converter.makeHtml(message.content);
-    } else {
-        messageHTML += `${message.content_type}: ${message.content}`;
+    // For every piece of content
+    for (let content of message.content) {
+        if (content.type == 'text') {
+            // Convert markdown to HTML, only for display
+            var converter = new showdown.Converter();
+            messageHTML += converter.makeHtml(content.value);
+        } else {
+            messageHTML += `${content.type}: ${content.value}`;
+        }
     }
+
     messageHTML += '</div>';
 
     console.log("Appending message:", messageHTML);
@@ -80,8 +84,10 @@ function sendMessage(userInput, assistant_name) {
     // Construct a message object with the expected format
     const userMessage = {
         role: 'user',
-        content_type: 'text',
-        content: userInput
+        content: [{
+            type: 'text',
+            value: userInput
+        }]
     };
     // Append user message to chat
     appendMessage(userMessage);

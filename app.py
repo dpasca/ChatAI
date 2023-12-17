@@ -94,26 +94,27 @@ def append_loc_message(message):
     session.modified = True
 
 def message_to_dict(message):
-    #show_json(message)
+    result = {
+        "role": message.role,
+        "content": []
+    }
     for content in message.content:
         if content.type == "text":
-            return {
-                "role": message.role,
-                "content": content.text.value,
-                "content_type": content.type
-            } 
+            result["content"].append({
+                "value": content.text.value,
+                "type": content.type
+            })
         elif content.type == "image_file":
-            return {
-                "role": message.role,
-                "content": content.image_file.file_id,
-                "content_type": content.type
-            } 
-
-    return {
-        "role": message.role,
-        "content": "<Unknown content type>",
-        "content_type": "text"
-    }
+            result["content"].append({
+                "value": content.image_file.file_id,
+                "type": content.type
+            })
+        else:
+            result["content"].append({
+                "value": "<Unknown content type>",
+                "type": "text"
+            })
+    return result
 
 #===============================================================================
 @app.route('/clear_chat', methods=['POST'])
