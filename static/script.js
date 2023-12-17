@@ -78,12 +78,22 @@ function sendMessage(userInput, assistant_name) {
     .then(response => response.json())
     // Append response to chat
     .then(data => {
+        //console.log("Processed data: ", data);
+
         // Remove the waiting message
         removeAssistMessage();
 
         inputBox.disabled = false; // Enable input box
         sendButton.disabled = false; // Enable send button
-        appendAssistMessage(assistant_name, data.reply);
+        //appendAssistMessage(assistant_name, data.reply);
+        for (let message of data.reply) {
+            //console.log("Appending message:", message);
+            if (typeof message === 'string') {
+                appendAssistMessage(assistant_name, message);
+            } else {
+                //console.error("Received non-string message:", message);
+            }
+        }
     });
 }
 
