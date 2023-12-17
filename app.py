@@ -199,7 +199,7 @@ def send_message():
         message_dict = message_to_dict(msg)
         append_loc_message(message_dict)
         # We only want the content of the message
-        replies.append(message_dict["content"])
+        replies.append(message_dict)
 
     logmsg(f"Replies: {replies}")
 

@@ -1,7 +1,7 @@
 
-function appendMessage(message, assistant_name) {
+function appendMessage(message, assistant_name='') {
     if (message === null || typeof message !== 'object') {
-        console.error("Unknown message format for:", message);
+        console.error(`Unknown message format for message: ${message} type: ${typeof message}`);
         return;
     }
 
@@ -77,7 +77,14 @@ function sendMessage(userInput, assistant_name) {
     inputBox.disabled = true; // Disable input box
     sendButton.disabled = true; // Disable send button
 
-    appendUserMessage(userInput);
+    // Construct a message object with the expected format
+    const userMessage = {
+        role: 'user',
+        content_type: 'text',
+        content: userInput
+    };
+    // Append user message to chat
+    appendMessage(userMessage);
 
     // Append a waiting message
     appendWaitingAssistMessage(assistant_name);
