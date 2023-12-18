@@ -87,6 +87,11 @@
           appendMessage(messages[i], "{{ assistant_name }}");
         }
 
+        // Enable the erase button
+        if (messages.length > 0) {
+          document.getElementById('erase-button').style.display = 'block';
+        }
+
         // Scroll to the bottom of the chatbox
         var chatbox = document.getElementById('chatbox');
         chatbox.scrollTop = chatbox.scrollHeight;

@@ -33,7 +33,7 @@ function appendMessage(message, assistant_name='') {
 
     messageHTML += '</div>';
 
-    console.log("Appending message:", messageHTML);
+    //console.log("Appending message:", messageHTML);
 
     chatBox.innerHTML += messageHTML;
 }
@@ -128,6 +128,8 @@ function sendMessage(userInput, assistant_name) {
             //console.log("Appending message:", message);
             appendMessage(message, assistant_name);
         }
+        // Enable the erase button
+        document.getElementById('erase-button').style.display = 'block';
     });
 }
 
