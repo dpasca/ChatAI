@@ -106,7 +106,7 @@ function sendMessage(userInput, assistant_name) {
     // Get response from Flask server
     .then(response => {
         if (!response.ok) {
-            throw new Error('Network response was not ok');
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
         return response.json();
     })
@@ -114,22 +114,27 @@ function sendMessage(userInput, assistant_name) {
     .then(data => {
         //console.log("Processed data: ", data);
 
-        // Remove the waiting message
-        removeAssistMessage();
+        removeAssistMessage(); // Remove the waiting message
+        inputBox.disabled = false; // Enable input box
+        sendButton.disabled = false; // Enable send button
 
         if (data.replies.length == 0) {
             return;
         }
-
-        inputBox.disabled = false; // Enable input box
-        sendButton.disabled = false; // Enable send button
-        
         for (let message of data.replies) {
             //console.log("Appending message:", message);
             appendMessage(message, assistant_name);
         }
         // Enable the erase button
         document.getElementById('erase-button').style.display = 'block';
+    })
+    .catch(error => {
+        console.error('There was a problem with the fetch operation:', error);
+        // TODO: have an error message appear in the chat
+
+        removeAssistMessage(); // Remove the waiting message
+        inputBox.disabled = false; // Enable input box
+        sendButton.disabled = false; // Enable send button
     });
 }
 

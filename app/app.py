@@ -7,6 +7,7 @@ from openai import OpenAI
 import datetime
 import hashlib
 import inspect
+from duckduckgo_search import ddg
 
 # References:
 # - https://cookbook.openai.com/examples/assistants_api_overview_python
@@ -17,6 +18,8 @@ with open('config.json') as f:
 
 # Enable for debugging purposes
 ENABLE_LOGGING = False
+
+ENABLE_WEBSEARCH = True
 
 ASSISTANT_NAME = config["ASSISTANT_NAME"]
 ASSISTANT_ROLE = "\n".join(config["ASSISTANT_ROLE"])
@@ -30,6 +33,11 @@ def logmsg(msg):
         caller = inspect.currentframe().f_back.f_code.co_name
         print(f"[{caller}] {msg}")
 
+def logerr(msg):
+    if ENABLE_LOGGING:
+        caller = inspect.currentframe().f_back.f_code.co_name
+        print(f"\033[91m[ERR][{caller}] {msg}\033[0m")
+
 def show_json(obj):
     try:
         if isinstance(obj, list):
@@ -37,7 +45,7 @@ def show_json(obj):
         else:
             logmsg(json.loads(obj.model_dump_json()))  # For objects with model_dump_json
     except AttributeError:
-        logmsg("Object does not support model_dump_json")
+        logerr("Object does not support model_dump_json")
     except:
         logmsg("Object is not JSON serializable, plain print below...")
         logmsg(obj)
@@ -58,12 +66,39 @@ def createAssistant():
             return client.beta.assistants.retrieve(assist.id)
 
     logmsg(f"Creating new assistant with name {unique_name}")
+
+    tools = []
+    tools.append({"type": "code_interpreter"})
+
+    if ENABLE_WEBSEARCH:
+        tools.append(
+        {
+            "type": "function",
+            "function": {
+                "name": "performWebSearch",
+                "description": "Perform a web search for any unknown or current information",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        })
+
+    logmsg(f"Tools: {tools}")
+
     return client.beta.assistants.create(
         name=unique_name,
         instructions=ASSISTANT_ROLE,
-        tools=[{"type": "code_interpreter"}],
+        tools=tools,
         model=config["model_version"])
 
+logmsg("Creating assistant...")
 assistant = createAssistant()
 
 # Create the thread if it doesn't exist
@@ -165,13 +200,107 @@ def get_response(thread):
     return client.beta.threads.messages.list(thread_id=thread.id, order="asc")
 
 def wait_on_run(run, thread_id):
-    while run.status == "queued" or run.status == "in_progress":
-        run = client.beta.threads.runs.retrieve(
+    while True:
+        run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+        if run.status == "queued" or run.status == "in_progress":
+            time.sleep(0.5)
+        else:
+            break
+
+# Possible run statuses:
+#  in_progress, requires_action, cancelling, cancelled, failed, completed, or expired
+
+#===============================================================================
+def get_thread_status(thread_id):
+    data = client.beta.threads.runs.list(thread_id=thread_id, limit=1).data
+    if data is None or len(data) == 0:
+        return None, None
+    return data[0].status, data[0].id
+
+#===============================================================================
+def cancel_thread(run_id, thread_id):
+    while True:
+        run = client.beta.threads.runs.retrieve(run_id=run_id, thread_id=thread_id)
+        logmsg(f"Run status: {run.status}")
+
+        if run.status in ["completed", "cancelled", "failed", "expired"]:
+            break
+
+        if run.status in ["queued", "in_progress", "requires_action"]:
+            logmsg("Cancelling thread...")
+            run = client.beta.threads.runs.cancel(run_id=run_id, thread_id=thread_id)
+            time.sleep(0.5)
+            continue
+
+        if run.status == "cancelling":
+            time.sleep(0.5)
+            continue
+
+#===============================================================================
+def wait_to_use_thread(thread_id):
+    for i in range(5):
+        status, run_id = get_thread_status(thread_id)
+        if status is None:
+            return True
+        logmsg(f"Thread status from last run: {status}")
+
+        # If it's expired, then we just can't use it anymore
+        if status == "expired":
+            logerr("Thread expired, cannot use it anymore")
+            return False
+
+        # Acceptable statuses to continue
+        if status in ["completed", "failed", "cancelled"]:
+            logmsg("Thread is available")
+            return True
+
+        # Waitable states
+        if status in ["queued", "in_progress", "cancelling"]:
+            logmsg("Waiting for thread to become available...")
+
+        logmsg("Status in required action: " + str(status == "requires_action"))
+
+        # States that we cannot handle at this point
+        if status in ["requires_action"]:
+            logerr("Thread requires action, but we don't know what to do. Cancelling...")
+            cancel_thread(run_id=run_id, thread_id=thread_id)
+            continue
+
+        time.sleep(0.5)
+
+    return False
+
+#===============================================================================
+def handle_requires_action(run, thread_id):
+
+    # Extract single tool call
+    if run.required_action is None:
+        logerr("run.required_action is None")
+        return
+
+    tool_call = run.required_action.submit_tool_outputs.tool_calls[0]
+    name = tool_call.function.name
+    arguments = json.loads(tool_call.function.arguments)
+    logmsg(f"Function Name: {name}")
+    logmsg(f"Arguments: {arguments}")
+
+    if name == "performWebSearch":
+        responses = ddg(arguments["query"], max_results=10)
+
+        logmsg("Submitting tool outputs...")
+        run = client.beta.threads.runs.submit_tool_outputs(
             thread_id=thread_id,
             run_id=run.id,
+            tool_outputs=[
+                {
+                    "tool_call_id": tool_call.id,
+                    "output": json.dumps(responses),
+                }
+            ],
         )
-        time.sleep(0.5)
-    return run
+        logmsg(f"Run status: {run.status}")
+    else:
+        logerr(f"Unknown function {name}")
 
 #===============================================================================
 @app.route('/send_message', methods=['POST'])
@@ -181,10 +310,37 @@ def send_message():
 
     thread_id = session['thread_id']
 
+    # Wait or fail if the thread is stuck
+    if wait_to_use_thread(thread_id) == False:
+        return jsonify({'replies': []}), 500
+
     # Add the new message to the thread
+    logmsg(f"Sending message: {msg_text}")
     msg, run = submit_message(assistant.id, thread_id, msg_text)
 
-    wait_on_run(run, thread_id)
+    # Wait for the run to complete
+    last_printed_status = None
+    while True:
+        run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+        if run.status != last_printed_status:
+            logmsg(f"Run status: {run.status}")
+
+        if run.status == "queued" or run.status == "in_progress":
+            time.sleep(0.5)
+            continue
+
+        # Handle possible request for action (function calling)
+        if run.status == "requires_action":
+            handle_requires_action(run, thread_id)
+
+        # See if any error occurred so far
+        if run.status is ["expired", "cancelling", "cancelled", "failed"]:
+            logerr("Run failed")
+            return jsonify({'replies': []}), 500
+
+        # All good
+        if run.status == "completed":
+            break
 
     # Retrieve all the messages added after our last user message
     new_messages = client.beta.threads.messages.list(
@@ -209,7 +365,7 @@ def send_message():
         return jsonify({'replies': replies}), 200
     else:
         logmsg("Sending no replies")
-        return jsonify({'replies': ["*No reply*"]}), 200
+        return jsonify({'replies': []}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
