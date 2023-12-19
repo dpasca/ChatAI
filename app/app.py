@@ -92,14 +92,6 @@ def createAssistant():
     def_str += config["model_version"]
     unique_name = ASSISTANT_NAME + "_" + hashlib.sha256(def_str.encode()).hexdigest()
 
-    assist_list = client.beta.assistants.list()
-    for assist in assist_list.data:
-        if assist.name == unique_name:
-            logmsg(f"Found existing assistant with name {unique_name}")
-            return client.beta.assistants.retrieve(assist.id)
-
-    logmsg(f"Creating new assistant with name {unique_name}")
-
     tools = []
     tools.append({"type": "code_interpreter"})
 
@@ -123,16 +115,35 @@ def createAssistant():
             }
         })
 
+    tools.append(
+    {
+        "type": "function",
+        "function": {
+            "name": "get_user_info",
+            "description": "Get the user info, such as timezone and user-agent (browser)",
+        }
+    })
+
     logmsg(f"Tools: {tools}")
 
+    # Reuse the assistant if it already exists
+    for assist in client.beta.assistants.list().data:
+        if assist.name == unique_name:
+            logmsg(f"Found existing assistant with name {unique_name}")
+            # Set the tools and model version, in case they changed
+            client.beta.assistants.update(
+                assistant_id=assist.id,
+                tools=tools,
+                model=config["model_version"])
+            return assist
+
+    # Create a new assistant
+    logmsg(f"Creating new assistant with name {unique_name}")
     return client.beta.assistants.create(
         name=unique_name,
         instructions=ASSISTANT_ROLE,
         tools=tools,
         model=config["model_version"])
-
-logmsg("Creating assistant...")
-assistant = createAssistant()
 
 # Create the thread if it doesn't exist
 def createThread(force_new=False):
@@ -147,10 +158,6 @@ def createThread(force_new=False):
         thread = client.beta.threads.retrieve(session['thread_id'])
         logmsg("Retrieved existing thread with ID " + thread.id)
     return thread.id
-
-# Initialize Flask app
-app = Flask(__name__)
-app.secret_key = os.environ.get("CHATAI_FLASK_SECRET_KEY")
 
 # Local messages management (a cache of the thread)
 def get_loc_messages():
@@ -189,6 +196,34 @@ def message_to_dict(message):
                 "type": "text"
             })
     return result
+
+#===============================================================================
+# Initialize Flask app
+def create_app():
+    app = Flask(__name__)
+    app.secret_key = os.environ.get("CHATAI_FLASK_SECRET_KEY")
+
+    global ENABLE_LOGGING
+    if app.debug:
+        ENABLE_LOGGING = True
+        print("Logging enabled.")
+    
+    return app
+
+app = create_app()
+
+# Create the assistant
+logmsg("Creating assistant...")
+_assistant = createAssistant()
+
+#===============================================================================
+@app.route('/api/user_info', methods=['POST'])
+def user_info():
+    # Store the user info in the session
+    user_info = request.get_json()
+    session['user_info'] = user_info
+    logmsg(f"User info: {user_info}")
+    return jsonify({'status': 'success'})
 
 #===============================================================================
 @app.route('/clear_chat', methods=['POST'])
@@ -311,40 +346,46 @@ def wait_to_use_thread(thread_id):
 
 #===============================================================================
 def handle_required_action(run, thread_id):
-
-    # Extract single tool call
     if run.required_action is None:
         logerr("run.required_action is None")
         return
 
-    tool_call = run.required_action.submit_tool_outputs.tool_calls[0]
-    name = tool_call.function.name
-    arguments = json.loads(tool_call.function.arguments)
-    logmsg(f"Function Name: {name}")
-    logmsg(f"Arguments: {arguments}")
+    # Resolve the required actions and collect the results in tool_outputs
+    tool_outputs = []
+    for tool_call in run.required_action.submit_tool_outputs.tool_calls:
+        name = tool_call.function.name
+        arguments = json.loads(tool_call.function.arguments)
+        logmsg(f"Function Name: {name}")
+        logmsg(f"Arguments: {arguments}")
 
-    if name == "perform_web_search":
-        responses = ddg(arguments["query"], max_results=10)
-    else:
-        logerr(f"Unknown function {name}. Falling back to web search !")
-        name_to_human_friendly = name.replace("_", " ")
-        query = f"What is {name_to_human_friendly} of " + " ".join(arguments.values())
-        logmsg(f"Submitting made-up query: {query}")
-        responses = ddg(query, max_results=3)
+        responses = None
+        if name == "perform_web_search":
+            responses = ddg(arguments["query"], max_results=10)
+        elif name == "get_user_info":
+            responses = { "user_info": session['user_info'] }
+        else:
+            logerr(f"Unknown function {name}. Falling back to web search !")
+            name_to_human_friendly = name.replace("_", " ")
+            query = f"What is {name_to_human_friendly} of " + " ".join(arguments.values())
+            logmsg(f"Submitting made-up query: {query}")
+            responses = ddg(query, max_results=3)
 
-    logmsg("Submitting tool outputs...")
+        if responses is not None:
+            tool_outputs.append(
+                {
+                    "tool_call_id": tool_call.id,
+                    "output": json.dumps(responses),
+                }
+            )
+
+    # Submit the tool outputs
+    logmsg(f"Tool outputs: {tool_outputs}")
     run = client.beta.threads.runs.submit_tool_outputs(
         thread_id=thread_id,
         run_id=run.id,
-        tool_outputs=[
-            {
-                "tool_call_id": tool_call.id,
-                "output": json.dumps(responses),
-            }
-        ],
+        tool_outputs=tool_outputs,
     )
     logmsg(f"Run status: {run.status}")
-
 
 #===============================================================================
 @app.route('/send_message', methods=['POST'])
@@ -362,7 +403,7 @@ def send_message():
 
     # Add the new message to the thread
     logmsg(f"Sending message: {msg_with_meta}")
-    msg, run = submit_message(assistant.id, thread_id, msg_with_meta)
+    msg, run = submit_message(_assistant.id, thread_id, msg_with_meta)
 
     # Wait for the run to complete
     last_printed_status = None
@@ -415,6 +456,4 @@ def send_message():
         return jsonify({'replies': []}), 200
 
 if __name__ == '__main__':
-    if app.debug:
-        ENABLE_LOGGING = True
     app.run(host='0.0.0.0', port=8080, debug=True)

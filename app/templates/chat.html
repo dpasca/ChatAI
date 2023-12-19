@@ -81,6 +81,20 @@
 
       // Add the messages to the chatbox
       window.onload = function () {
+        // Send the user's time zone and user agent to the server
+        let timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        let userAgent = navigator.userAgent;
+        fetch('/api/user_info', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            timeZone: timeZone,
+            userAgent: userAgent
+          })
+        });
+
         //console.log("Window loaded");
         var chatbox = document.getElementById('chatbox');
         for (var i = 0; i < messages.length; i++) {
