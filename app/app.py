@@ -23,16 +23,14 @@ ENABLE_WEBSEARCH = True
 
 META_TAG = "message_meta"
 
-MESSAGEMETA_ROLE = f"""
+# Special instructions independent of the basic "role" instructions
+MESSAGEMETA_INSTUCT = f"""
 The user messages usually begins with metadata in a format like this:
 <{META_TAG}>
 unix_time: 1620000000
 </{META_TAG}>
 The user does not write this. It's injected by the chat app for the assistant to use.
 """
-
-ASSISTANT_NAME = config["ASSISTANT_NAME"]
-ASSISTANT_ROLE = "\n".join(config["ASSISTANT_ROLE"]) + "\n" + MESSAGEMETA_ROLE
 
 # Initialize OpenAI API
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -86,12 +84,6 @@ def stripUserMessageMeta(msg_with_meta):
 #===============================================================================
 # Create the assistant if it doesn't exist
 def createAssistant():
-    # Make an unique string based on the hash of the name and the role
-    def_str = ASSISTANT_NAME
-    def_str += ASSISTANT_ROLE
-    def_str += config["model_version"]
-    unique_name = ASSISTANT_NAME + "_" + hashlib.sha256(def_str.encode()).hexdigest()
-
     tools = []
     tools.append({"type": "code_interpreter"})
 
@@ -126,22 +118,27 @@ def createAssistant():
 
     logmsg(f"Tools: {tools}")
 
+    full_instructions = "\n".join(config["assistant_instructions"]) + "\n" + MESSAGEMETA_INSTUCT
+
+    codename = config["assistant_codename"]
+
     # Reuse the assistant if it already exists
     for assist in client.beta.assistants.list().data:
-        if assist.name == unique_name:
-            logmsg(f"Found existing assistant with name {unique_name}")
-            # Set the tools and model version, in case they changed
+        if assist.name == codename:
+            logmsg(f"Found existing assistant with name {codename}")
+            # Update the assistant
             client.beta.assistants.update(
                 assistant_id=assist.id,
+                instructions=full_instructions,
                 tools=tools,
                 model=config["model_version"])
             return assist
 
     # Create a new assistant
-    logmsg(f"Creating new assistant with name {unique_name}")
+    logmsg(f"Creating new assistant with name {codename}")
     return client.beta.assistants.create(
-        name=unique_name,
-        instructions=ASSISTANT_ROLE,
+        name=codename,
+        instructions=full_instructions,
         tools=tools,
         model=config["model_version"])
 
@@ -255,7 +252,7 @@ def index():
 
     return render_template(
                 'chat.html',
-                assistant_name=ASSISTANT_NAME,
+                assistant_name=config["assistant_name"],
                 messages=get_loc_messages(),
                 app_version=config["app_version"])
 
