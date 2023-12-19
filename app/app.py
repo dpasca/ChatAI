@@ -286,21 +286,26 @@ def handle_requires_action(run, thread_id):
 
     if name == "performWebSearch":
         responses = ddg(arguments["query"], max_results=10)
-
-        logmsg("Submitting tool outputs...")
-        run = client.beta.threads.runs.submit_tool_outputs(
-            thread_id=thread_id,
-            run_id=run.id,
-            tool_outputs=[
-                {
-                    "tool_call_id": tool_call.id,
-                    "output": json.dumps(responses),
-                }
-            ],
-        )
-        logmsg(f"Run status: {run.status}")
     else:
-        logerr(f"Unknown function {name}")
+        logerr(f"Unknown function {name}. Falling back to web search !")
+        name_to_human_friendly = name.replace("_", " ")
+        query = f"What is {name_to_human_friendly} of " + " ".join(arguments.values())
+        logmsg(f"Submitting made-up query: {query}")
+        responses = ddg(query, max_results=3)
+
+    logmsg("Submitting tool outputs...")
+    run = client.beta.threads.runs.submit_tool_outputs(
+        thread_id=thread_id,
+        run_id=run.id,
+        tool_outputs=[
+            {
+                "tool_call_id": tool_call.id,
+                "output": json.dumps(responses),
+            }
+        ],
+    )
+    logmsg(f"Run status: {run.status}")
+
 
 #===============================================================================
 @app.route('/send_message', methods=['POST'])
@@ -324,6 +329,7 @@ def send_message():
         run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
         if run.status != last_printed_status:
             logmsg(f"Run status: {run.status}")
+            last_printed_status = run.status
 
         if run.status == "queued" or run.status == "in_progress":
             time.sleep(0.5)
