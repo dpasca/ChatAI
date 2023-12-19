@@ -36,6 +36,7 @@ function appendMessage(message, assistant_name='') {
     //console.log("Appending message:", messageHTML);
 
     chatBox.innerHTML += messageHTML;
+    chatBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
 }
 
 function appendWaitingAssistMessage(assistant_name) {
@@ -52,6 +53,7 @@ function appendWaitingAssistMessage(assistant_name) {
     typingIndicator += `<b>${assistant_name}</b> is typing<span class="typing-dots">${typingDots}</span>`;
     typingIndicator += `</div>`;
     chatBox.innerHTML += typingIndicator;
+    chatBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
 
     // Animate dots
     let dots = document.querySelector('.typing-dots').children;
