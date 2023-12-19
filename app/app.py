@@ -16,13 +16,23 @@ from duckduckgo_search import ddg
 with open('config.json') as f:
     config = json.load(f)
 
-# Enable for debugging purposes
+# Enable for debugging purposes (main overrides this if app.debug is True)
 ENABLE_LOGGING = False
 
 ENABLE_WEBSEARCH = True
 
+META_TAG = "message_meta"
+
+MESSAGEMETA_ROLE = f"""
+The user messages usually begins with metadata in a format like this:
+<{META_TAG}>
+unix_time: 1620000000
+</{META_TAG}>
+The user does not write this. It's injected by the chat app for the assistant to use.
+"""
+
 ASSISTANT_NAME = config["ASSISTANT_NAME"]
-ASSISTANT_ROLE = "\n".join(config["ASSISTANT_ROLE"])
+ASSISTANT_ROLE = "\n".join(config["ASSISTANT_ROLE"]) + "\n" + MESSAGEMETA_ROLE
 
 # Initialize OpenAI API
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -51,6 +61,29 @@ def show_json(obj):
         logmsg(obj)
 
 #===============================================================================
+def prepareUserMessageMeta():
+    return f"<{META_TAG}>\nunix_time: {int(time.time())}\n</{META_TAG}>\n"
+
+def stripUserMessageMeta(msg_with_meta):
+    # Remove <message_meta> </message_meta> and everything in between
+    msg = msg_with_meta
+    begin_tag = f"<{META_TAG}>"
+    end_tag = f"</{META_TAG}>"
+    end_tag_len = len(end_tag)
+
+    while True:
+        start = msg.find(begin_tag)
+        if start == -1:
+            break
+        end = msg.find(end_tag)
+        if end == -1:
+            break
+
+        msg = msg[:start] + msg[end + end_tag_len:]
+        
+    return msg
+
+#===============================================================================
 # Create the assistant if it doesn't exist
 def createAssistant():
     # Make an unique string based on the hash of the name and the role
@@ -75,7 +108,7 @@ def createAssistant():
         {
             "type": "function",
             "function": {
-                "name": "performWebSearch",
+                "name": "perform_web_search",
                 "description": "Perform a web search for any unknown or current information",
                 "parameters": {
                     "type": "object",
@@ -135,8 +168,14 @@ def message_to_dict(message):
     }
     for content in message.content:
         if content.type == "text":
+
+            # Strip the message meta if it's a user message
+            val = content.text.value
+            if message.role == "user":
+                val = stripUserMessageMeta(val)
+
             result["content"].append({
-                "value": content.text.value,
+                "value": val,
                 "type": content.type
             })
         elif content.type == "image_file":
@@ -271,7 +310,7 @@ def wait_to_use_thread(thread_id):
     return False
 
 #===============================================================================
-def handle_requires_action(run, thread_id):
+def handle_required_action(run, thread_id):
 
     # Extract single tool call
     if run.required_action is None:
@@ -284,7 +323,7 @@ def handle_requires_action(run, thread_id):
     logmsg(f"Function Name: {name}")
     logmsg(f"Arguments: {arguments}")
 
-    if name == "performWebSearch":
+    if name == "perform_web_search":
         responses = ddg(arguments["query"], max_results=10)
     else:
         logerr(f"Unknown function {name}. Falling back to web search !")
@@ -319,9 +358,11 @@ def send_message():
     if wait_to_use_thread(thread_id) == False:
         return jsonify({'replies': []}), 500
 
+    msg_with_meta = prepareUserMessageMeta() + msg_text
+
     # Add the new message to the thread
-    logmsg(f"Sending message: {msg_text}")
-    msg, run = submit_message(assistant.id, thread_id, msg_text)
+    logmsg(f"Sending message: {msg_with_meta}")
+    msg, run = submit_message(assistant.id, thread_id, msg_with_meta)
 
     # Wait for the run to complete
     last_printed_status = None
@@ -337,7 +378,7 @@ def send_message():
 
         # Handle possible request for action (function calling)
         if run.status == "requires_action":
-            handle_requires_action(run, thread_id)
+            handle_required_action(run, thread_id)
 
         # See if any error occurred so far
         if run.status is ["expired", "cancelling", "cancelled", "failed"]:
@@ -374,4 +415,6 @@ def send_message():
         return jsonify({'replies': []}), 200
 
 if __name__ == '__main__':
+    if app.debug:
+        ENABLE_LOGGING = True
     app.run(host='0.0.0.0', port=8080, debug=True)
