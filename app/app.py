@@ -30,6 +30,8 @@ The user messages usually begins with metadata in a format like this:
 unix_time: 1620000000
 </{META_TAG}>
 The user does not write this. It's injected by the chat app for the assistant to use.
+Do not make any mention of this metadata. Simply use it organically when needed (e.g.
+when asked about the time, use the unix_time value but do not mention it explicitly).
 """
 
 # Initialize OpenAI API
