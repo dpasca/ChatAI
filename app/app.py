@@ -116,6 +116,9 @@ def createAssistant():
         }
     })
 
+    if config["enable_retrieval"]:
+        tools.append({"type": "retrieval"})
+
     logmsg(f"Tools: {tools}")
 
     full_instructions = "\n".join(config["assistant_instructions"]) + "\n" + MESSAGEMETA_INSTUCT
