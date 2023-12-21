@@ -18,6 +18,7 @@ with open('config.json') as f:
 
 # Enable for debugging purposes (main overrides this if app.debug is True)
 ENABLE_LOGGING = False
+ENABLE_SLEEP_LOGGING = False
 
 ENABLE_WEBSEARCH = True
 
@@ -59,6 +60,13 @@ def show_json(obj):
     except:
         logmsg("Object is not JSON serializable, plain print below...")
         logmsg(obj)
+
+def sleepForAPI():
+    if ENABLE_LOGGING and ENABLE_SLEEP_LOGGING:
+        caller = inspect.currentframe().f_back.f_code.co_name
+        line = inspect.currentframe().f_back.f_lineno
+        print(f"[{caller}:{line}] sleeping...")
+    time.sleep(0.5)
 
 #===============================================================================
 def prepareUserMessageMeta():
@@ -275,14 +283,6 @@ def submit_message(assistant_id, thread_id, msg_text):
 def get_response(thread):
     return client.beta.threads.messages.list(thread_id=thread.id, order="asc")
 
-def wait_on_run(run, thread_id):
-    while True:
-        run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
-        if run.status == "queued" or run.status == "in_progress":
-            time.sleep(0.5)
-        else:
-            break
-
 # Possible run statuses:
 #  in_progress, requires_action, cancelling, cancelled, failed, completed, or expired
 
@@ -305,11 +305,11 @@ def cancel_thread(run_id, thread_id):
         if run.status in ["queued", "in_progress", "requires_action"]:
             logmsg("Cancelling thread...")
             run = client.beta.threads.runs.cancel(run_id=run_id, thread_id=thread_id)
-            time.sleep(0.5)
+            sleepForAPI()
             continue
 
         if run.status == "cancelling":
-            time.sleep(0.5)
+            sleepForAPI()
             continue
 
 #===============================================================================
@@ -342,7 +342,7 @@ def wait_to_use_thread(thread_id):
             cancel_thread(run_id=run_id, thread_id=thread_id)
             continue
 
-        time.sleep(0.5)
+        sleepForAPI()
 
     return False
 
@@ -390,7 +390,18 @@ def handle_required_action(run, thread_id):
     logmsg(f"Run status: {run.status}")
 
 #===============================================================================
+def timing_decorator(func):
+    def wrapper(*args, **kwargs):
+        start = datetime.datetime.now()
+        result = func(*args, **kwargs)
+        end = datetime.datetime.now()
+        logmsg(f"Function {func.__name__} took {end - start} to complete")
+        return result
+    return wrapper
+
+#===============================================================================
 @app.route('/send_message', methods=['POST'])
+@timing_decorator
 def send_message():
 
     msg_text = request.json['message']
@@ -416,7 +427,7 @@ def send_message():
             last_printed_status = run.status
 
         if run.status == "queued" or run.status == "in_progress":
-            time.sleep(0.5)
+            sleepForAPI()
             continue
 
         # Handle possible request for action (function calling)
