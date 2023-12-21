@@ -24,8 +24,7 @@ function appendMessage(message, assistant_name='') {
     for (let content of message.content) {
         if (content.type == 'text') {
             // Convert markdown to HTML, only for display
-            var converter = new showdown.Converter();
-            messageHTML += converter.makeHtml(content.value);
+            messageHTML += `<zero-md><script type="text/markdown">${content.value}</script></zero-md>`;
         } else {
             messageHTML += `${content.type}: ${content.value}`;
         }
