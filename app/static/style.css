@@ -18,10 +18,10 @@
 }
 
 .ai-message {
-    background-color: #d0d0d0; /* Change to your preferred color */
+    background-color: #e0e0e0; /* Change to your preferred color */
+    border: 1px solid #b0b0b0;
     color: black; /* Change to your preferred color */
     padding: 7px;
-    border: 1px solid #ddd;
     margin-bottom: 10px;
     position: relative;
 }
@@ -29,14 +29,20 @@
 .ai-message::before {
     content: attr(data-name);
     position: absolute;
-    top: -20px;
+    top: -15px;
     right: 10px;
-    background-color: #d0d0d0; /* Change to your preferred color */
-    padding: 2px 5px;
-    border-radius: 2px;
-    color: black; /* Change to your preferred color */
-    font-size: 0.8rem;
+    background-color: #e0e0e0;
+    border: 1px solid #b0b0b0;
+    border-bottom: none;
+    padding-left: 5px;
+    padding-right: 6px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    border-radius: 4px;
+    color: black;
+    font-size: 0.85rem;
     font-weight: bold;
+    font-style: italic;
 }
 
 .typing-dots {
@@ -46,10 +52,10 @@
 }
 
 .user-message {
-    background-color: #a0a0a0; /* Change to your preferred color */
+    background-color: #c0c0c0; /* Change to your preferred color */
     color: white; /* Change to your preferred color */
     padding: 7px;
-    border: 1px solid #ddd;
+    border: 1px solid #909090;
     margin-bottom: 10px;
     position: relative;
 }
