@@ -23,8 +23,29 @@ function appendMessage(message, assistant_name='') {
     // For every piece of content
     for (let content of message.content) {
         if (content.type == 'text') {
-            // Convert markdown to HTML, only for display
-            messageHTML += `<zero-md><script type="text/markdown">${content.value}</script></zero-md>`;
+
+            // Display as Markdown
+            const defaultStyles = `
+            <link rel="stylesheet"
+                href="https://cdn.jsdelivr.net/gh/sindresorhus/github-markdown-css@4/github-markdown.min.css" />
+            <link rel="stylesheet"
+                href="https://cdn.jsdelivr.net/gh/PrismJS/prism@1/themes/prism.min.css" />`;
+
+            // Smaller font size for code blocks
+            const customStyles = `
+            code[class*="language-"], pre[class*="language-"] {
+                font-size: 0.75em;
+            }`;
+            // The final message
+            messageHTML += `
+            <zero-md>
+                <template id="zero-md-styles">
+                    ${defaultStyles}
+                    <style>${customStyles}</style>
+                </template>
+                <script type="text/markdown">${content.value}</script>
+            </zero-md>
+            `;
         } else {
             messageHTML += `${content.type}: ${content.value}`;
         }
