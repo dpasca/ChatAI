@@ -2,3 +2,5 @@ flask
 openai
 #apscheduler
 duckduckgo_search
+python-dotenv
+boto3

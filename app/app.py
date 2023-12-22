@@ -2,12 +2,15 @@ import os
 import json
 import time
 from pyexpat.errors import messages
+from aiohttp import ClientError
 from flask import Flask, redirect, render_template, request, jsonify, session, url_for
+from dotenv import load_dotenv
 from openai import OpenAI
 import datetime
-import hashlib
 import inspect
 from duckduckgo_search import ddg
+from storage import Storage
+from io import BytesIO
 
 # References:
 # - https://cookbook.openai.com/examples/assistants_api_overview_python
@@ -15,6 +18,8 @@ from duckduckgo_search import ddg
 # Load configuration from config.json
 with open('config.json') as f:
     config = json.load(f)
+
+USER_BUCKET_PATH = "user_a_007784"
 
 # Enable for debugging purposes (main overrides this if app.debug is True)
 ENABLE_LOGGING = False
@@ -36,7 +41,7 @@ when asked about the time, use the unix_time value but do not mention it explici
 """
 
 # Initialize OpenAI API
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+_oai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 #===============================================================================
 def logmsg(msg):
@@ -47,7 +52,7 @@ def logmsg(msg):
 def logerr(msg):
     if ENABLE_LOGGING:
         caller = inspect.currentframe().f_back.f_code.co_name
-        print(f"\033[91m[ERR][{caller}] {msg}\033[0m")
+        print(f"\033[91m[ERR]\033[0m[{caller}] {msg}")
 
 def show_json(obj):
     try:
@@ -136,11 +141,11 @@ def createAssistant():
     codename = config["assistant_codename"]
 
     # Reuse the assistant if it already exists
-    for assist in client.beta.assistants.list().data:
+    for assist in _oai_client.beta.assistants.list().data:
         if assist.name == codename:
             logmsg(f"Found existing assistant with name {codename}")
             # Update the assistant
-            client.beta.assistants.update(
+            _oai_client.beta.assistants.update(
                 assistant_id=assist.id,
                 instructions=full_instructions,
                 tools=tools,
@@ -149,7 +154,7 @@ def createAssistant():
 
     # Create a new assistant
     logmsg(f"Creating new assistant with name {codename}")
-    return client.beta.assistants.create(
+    return _oai_client.beta.assistants.create(
         name=codename,
         instructions=full_instructions,
         tools=tools,
@@ -159,13 +164,13 @@ def createAssistant():
 def createThread(force_new=False):
     # if there are no messages in the session, add the role message
     if ('thread_id' not in session) or (session['thread_id'] is None) or force_new:
-        thread = client.beta.threads.create()
+        thread = _oai_client.beta.threads.create()
         logmsg("Creating new thread with ID " + thread.id)
         # Save the thread ID to the session
         session['thread_id'] = thread.id
         session.modified = True
     else:
-        thread = client.beta.threads.retrieve(session['thread_id'])
+        thread = _oai_client.beta.threads.retrieve(session['thread_id'])
         logmsg("Retrieved existing thread with ID " + thread.id)
     return thread.id
 
@@ -178,7 +183,28 @@ def append_loc_message(message):
     get_loc_messages().append(message)
     session.modified = True
 
-def message_to_dict(message):
+# Replace the file paths with actual URLs
+def resolveAnnotations(out_msg, annotations, make_file_url):
+    new_msg = out_msg
+    # Sort annotations by start_index in descending order
+    sorted_annotations = sorted(annotations, key=lambda x: x.start_index, reverse=True)
+
+    for a in sorted_annotations:
+        if a.type == "file_path":
+            file_id = a.file_path.file_id
+
+            logmsg(f"Found file {file_id} associated with '{a.text}'")
+
+            file_url = make_file_url(file_id)  # Function to get the file URL using file_id
+
+            logmsg(f"Replacing file path {a.text} with URL {file_url}")
+
+            # Replace the file path with the file URL
+            new_msg = new_msg[:a.start_index] + file_url + new_msg[a.end_index:]
+    
+    return new_msg
+
+def message_to_dict(message, make_file_url):
     result = {
         "role": message.role,
         "content": []
@@ -187,17 +213,25 @@ def message_to_dict(message):
         if content.type == "text":
 
             # Strip the message meta if it's a user message
-            val = content.text.value
+            out_msg = content.text.value
             if message.role == "user":
-                val = stripUserMessageMeta(val)
+                out_msg = stripUserMessageMeta(out_msg)
+
+            # Apply whatever annotations may be there
+            if content.text.annotations is not None:
+                out_msg = resolveAnnotations(
+                    out_msg=out_msg,
+                    annotations=content.text.annotations,
+                    make_file_url=make_file_url)
 
             result["content"].append({
-                "value": val,
+                "value": out_msg,
                 "type": content.type
             })
         elif content.type == "image_file":
+            # Append the content with the image URL
             result["content"].append({
-                "value": content.image_file.file_id,
+                "value": make_file_url(content.image_file.file_id),
                 "type": content.type
             })
         else:
@@ -221,6 +255,10 @@ def create_app():
     return app
 
 app = create_app()
+
+#===============================================================================
+logmsg("Creating storage...")
+_storage = Storage(os.getenv("DO_STORAGE_CONTAINER"), ENABLE_LOGGING)
 
 # Create the assistant
 logmsg("Creating assistant...")
@@ -246,6 +284,19 @@ def clear_chat():
     return redirect(url_for('index'))
 
 #===============================================================================
+def make_file_url(file_id):
+    file_path = f"{USER_BUCKET_PATH}/{file_id}"
+    if not _storage.file_exists(file_path):
+        logmsg(f"Downloading file {file_id} from source...")
+        data = _oai_client.files.content(file_id)
+        data_io = BytesIO(data.read())
+        logmsg(f"Uploading file {file_path} to storage...")
+        _storage.upload_file(data_io, file_path)
+
+    logmsg(f"Getting file url for {file_id}, path: {file_path}")
+    return _storage.get_file_url(file_path)
+
+#===============================================================================
 @app.route('/')
 def index():
     # Load or create the thread
@@ -256,12 +307,16 @@ def index():
     session['loc_messages'] = []
 
     # Get all the messages from the thread
-    history = client.beta.threads.messages.list(thread_id=thread_id, order="asc")
+    history = _oai_client.beta.threads.messages.list(thread_id=thread_id, order="asc")
     logmsg(f"Found {len(history.data)} messages in the thread history")
     for (i, msg) in enumerate(history.data):
+
         # Append message to messages list
         logmsg(f"Message {i} ({msg.role}): {msg.content}")
-        append_loc_message(message_to_dict(msg))
+        append_loc_message(
+            message_to_dict(
+                message=msg,
+                make_file_url=make_file_url))
 
     return render_template(
                 'chat.html',
@@ -271,24 +326,24 @@ def index():
 
 #===============================================================================
 def submit_message(assistant_id, thread_id, msg_text):
-    msg = client.beta.threads.messages.create(
+    msg = _oai_client.beta.threads.messages.create(
         thread_id=thread_id, role="user", content=msg_text
     )
-    run = client.beta.threads.runs.create(
+    run = _oai_client.beta.threads.runs.create(
         thread_id=thread_id,
         assistant_id=assistant_id,
     )
     return msg, run
 
 def get_response(thread):
-    return client.beta.threads.messages.list(thread_id=thread.id, order="asc")
+    return _oai_client.beta.threads.messages.list(thread_id=thread.id, order="asc")
 
 # Possible run statuses:
 #  in_progress, requires_action, cancelling, cancelled, failed, completed, or expired
 
 #===============================================================================
 def get_thread_status(thread_id):
-    data = client.beta.threads.runs.list(thread_id=thread_id, limit=1).data
+    data = _oai_client.beta.threads.runs.list(thread_id=thread_id, limit=1).data
     if data is None or len(data) == 0:
         return None, None
     return data[0].status, data[0].id
@@ -296,7 +351,7 @@ def get_thread_status(thread_id):
 #===============================================================================
 def cancel_thread(run_id, thread_id):
     while True:
-        run = client.beta.threads.runs.retrieve(run_id=run_id, thread_id=thread_id)
+        run = _oai_client.beta.threads.runs.retrieve(run_id=run_id, thread_id=thread_id)
         logmsg(f"Run status: {run.status}")
 
         if run.status in ["completed", "cancelled", "failed", "expired"]:
@@ -304,7 +359,7 @@ def cancel_thread(run_id, thread_id):
 
         if run.status in ["queued", "in_progress", "requires_action"]:
             logmsg("Cancelling thread...")
-            run = client.beta.threads.runs.cancel(run_id=run_id, thread_id=thread_id)
+            run = _oai_client.beta.threads.runs.cancel(run_id=run_id, thread_id=thread_id)
             sleepForAPI()
             continue
 
@@ -382,7 +437,7 @@ def handle_required_action(run, thread_id):
 
     # Submit the tool outputs
     logmsg(f"Tool outputs: {tool_outputs}")
-    run = client.beta.threads.runs.submit_tool_outputs(
+    run = _oai_client.beta.threads.runs.submit_tool_outputs(
         thread_id=thread_id,
         run_id=run.id,
         tool_outputs=tool_outputs,
@@ -421,7 +476,7 @@ def send_message():
     # Wait for the run to complete
     last_printed_status = None
     while True:
-        run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+        run = _oai_client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
         if run.status != last_printed_status:
             logmsg(f"Run status: {run.status}")
             last_printed_status = run.status
@@ -444,7 +499,7 @@ def send_message():
             break
 
     # Retrieve all the messages added after our last user message
-    new_messages = client.beta.threads.messages.list(
+    new_messages = _oai_client.beta.threads.messages.list(
         thread_id=thread_id,
         order="asc",
         after=msg.id
@@ -454,7 +509,8 @@ def send_message():
     replies = []
     for msg in new_messages.data:
         # Append message to messages list
-        message_dict = message_to_dict(msg)
+        message_dict = message_to_dict(msg, make_file_url)
+
         append_loc_message(message_dict)
         # We only want the content of the message
         replies.append(message_dict)

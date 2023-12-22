@@ -46,6 +46,8 @@ function appendMessage(message, assistant_name='') {
                 <script type="text/markdown">${content.value}</script>
             </zero-md>
             `;
+        } else if (content.type == 'image_file') {
+            messageHTML += `<img src="${content.value}" />`;
         } else {
             messageHTML += `${content.type}: ${content.value}`;
         }
