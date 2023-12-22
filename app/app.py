@@ -245,7 +245,7 @@ def message_to_dict(message, make_file_url):
         elif content.type == "image_file":
             # Append the content with the image URL
             result["content"].append({
-                "value": make_file_url(content.image_file.file_id),
+                "value": make_file_url(content.image_file.file_id, "image.png"),
                 "type": content.type
             })
         else:
