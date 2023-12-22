@@ -19,7 +19,7 @@
 
 .ai-message {
     background-color: #e0e0e0; /* Change to your preferred color */
-    border: 1px solid #b0b0b0;
+    border: 2px solid #b0b0b0;
     color: black; /* Change to your preferred color */
     padding: 7px;
     margin-bottom: 10px;
@@ -32,7 +32,7 @@
     top: -15px;
     right: 10px;
     background-color: #e0e0e0;
-    border: 1px solid #b0b0b0;
+    border: 2px solid #b0b0b0;
     border-bottom: none;
     padding-left: 5px;
     padding-right: 6px;
@@ -53,9 +53,9 @@
 
 .user-message {
     background-color: #c0c0c0; /* Change to your preferred color */
-    color: white; /* Change to your preferred color */
+    color: black;
     padding: 7px;
-    border: 1px solid #909090;
+    border: 2px solid #909090;
     margin-bottom: 10px;
     position: relative;
 }
@@ -108,4 +108,16 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+}
+
+/* Custom CSS for reducing text size in code blocks */
+pre[class*="language-"] code {
+    white-space: pre-wrap; /* Allows text wrapping in code blocks */
+    word-break: break-all; /* Optional: breaks words to prevent overflow */
+    font-size: 0.8em; /* Your existing font-size adjustment */
+}
+
+/* Override bottom margin for all <p> tags */
+p {
+    margin-bottom: 0.3em;
 }

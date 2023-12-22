@@ -4,6 +4,26 @@
 // Author: Davide Pasca, 2023/12/23
 // Desc: Support for chat.html
 //==================================================================
+
+// Instantiate markdown-it with Prism.js for syntax highlighting
+const md = window.markdownit({
+    highlight: function (str, lang) {
+        if (lang && Prism.languages[lang]) {
+            try {
+                return `<pre class="language-${lang}"><code class="language-${lang}">${Prism.highlight(str, Prism.languages[lang], lang)}</code></pre>`;
+            } catch (_) {}
+        }
+        // Use external default escaping
+        return '<pre class="language-plaintext"><code>' + md.utils.escapeHtml(str) + '</code></pre>';
+    }
+});
+
+// Reduce indentation of code blocks for readability
+function reformatIndentation(codeString) {
+    // Replace every occurrence of four spaces at the beginning of a line with two spaces
+    return codeString.replace(/^ {4}/gm, '  ');
+}
+
 function appendMessage(message, assistant_name='') {
     if (message === null || typeof message !== 'object') {
         console.error(`Unknown message format for message: ${message} type: ${typeof message}`);
@@ -36,21 +56,11 @@ function appendMessage(message, assistant_name='') {
             <link rel="stylesheet"
                 href="https://cdn.jsdelivr.net/gh/PrismJS/prism@1/themes/prism.min.css" />`;
 
-            // Smaller font size for code blocks
-            const customStyles = `
-            code[class*="language-"], pre[class*="language-"] {
-                font-size: 0.75em;
-            }`;
             // The final message
-            messageHTML += `
-            <zero-md>
-                <template id="zero-md-styles">
-                    ${defaultStyles}
-                    <style>${customStyles}</style>
-                </template>
-                <script type="text/markdown">${content.value}</script>
-            </zero-md>
-            `;
+            const reformattedContent = reformatIndentation(content.value);
+            const htmlContent = md.render(reformattedContent);
+            // Wrap the content in a div with a class for styling
+            messageHTML += `<div class="markdown-content">${htmlContent}</div>`;
         } else if (content.type == 'image_file') {
             messageHTML += `<img src="${content.value}" />`;
         } else {
