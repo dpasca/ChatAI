@@ -1,3 +1,9 @@
+#==================================================================
+# app.py
+#
+# Author: Davide Pasca, 2023/12/23
+# Description: Chat AI Flask app
+#==================================================================
 import os
 import json
 import time

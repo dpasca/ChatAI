@@ -1,3 +1,9 @@
+#==================================================================
+# storage.py
+#
+# Author: Davide Pasca, 2023/12/23
+# Desc: Storage class for DigitalOcean Spaces
+#==================================================================
 import os
 import inspect
 import boto3

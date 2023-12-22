@@ -1,4 +1,9 @@
-
+//==================================================================
+// script.js
+//
+// Author: Davide Pasca, 2023/12/23
+// Desc: Support for chat.html
+//==================================================================
 function appendMessage(message, assistant_name='') {
     if (message === null || typeof message !== 'object') {
         console.error(`Unknown message format for message: ${message} type: ${typeof message}`);
