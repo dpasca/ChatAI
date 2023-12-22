@@ -62,7 +62,10 @@ function appendMessage(message, assistant_name='') {
             // Wrap the content in a div with a class for styling
             messageHTML += `<div class="markdown-content">${htmlContent}</div>`;
         } else if (content.type == 'image_file') {
-            messageHTML += `<img src="${content.value}" />`;
+            //messageHTML += `<img src="${content.value}" />`;
+            messageHTML += `<img src="${content.value}"`;
+            messageHTML += ` style="max-width: 100%; max-height: 400px; object-fit: contain; width: auto; height: auto;" />`;
+            //messageHTML += md.render(`![image](${content.value})`);
         } else {
             messageHTML += `${content.type}: ${content.value}`;
         }
