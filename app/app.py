@@ -11,7 +11,7 @@ from pyexpat.errors import messages
 from aiohttp import ClientError
 from flask import Flask, redirect, render_template, request, jsonify, session, url_for
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai_wrapper import OpenAIWrapper
 import datetime
 import inspect
 from duckduckgo_search import ddg
@@ -48,7 +48,7 @@ when asked about the time, use the unix_time value but do not mention it explici
 """
 
 # Initialize OpenAI API
-_oai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+_oa_wrap = OpenAIWrapper(api_key=os.environ.get("OPENAI_API_KEY"))
 
 #===============================================================================
 def logmsg(msg):
@@ -148,11 +148,11 @@ def createAssistant():
     codename = config["assistant_codename"]
 
     # Reuse the assistant if it already exists
-    for assist in _oai_client.beta.assistants.list().data:
+    for assist in _oa_wrap.ListAssistants().data:
         if assist.name == codename:
             logmsg(f"Found existing assistant with name {codename}")
             # Update the assistant
-            _oai_client.beta.assistants.update(
+            _oa_wrap.UpdateAssistant(
                 assistant_id=assist.id,
                 instructions=full_instructions,
                 tools=tools,
@@ -161,7 +161,7 @@ def createAssistant():
 
     # Create a new assistant
     logmsg(f"Creating new assistant with name {codename}")
-    return _oai_client.beta.assistants.create(
+    return _oa_wrap.CreateAssistant(
         name=codename,
         instructions=full_instructions,
         tools=tools,
@@ -171,13 +171,13 @@ def createAssistant():
 def createThread(force_new=False):
     # if there are no messages in the session, add the role message
     if ('thread_id' not in session) or (session['thread_id'] is None) or force_new:
-        thread = _oai_client.beta.threads.create()
+        thread = _oa_wrap.CreateThread()
         logmsg("Creating new thread with ID " + thread.id)
         # Save the thread ID to the session
         session['thread_id'] = thread.id
         session.modified = True
     else:
-        thread = _oai_client.beta.threads.retrieve(session['thread_id'])
+        thread = _oa_wrap.RetrieveThread(session['thread_id'])
         logmsg("Retrieved existing thread with ID " + thread.id)
     return thread.id
 
@@ -311,7 +311,7 @@ def make_file_url(file_id, simple_name):
 
     if not _storage.file_exists(file_path):
         logmsg(f"Downloading file {file_id} from source...")
-        data = _oai_client.files.content(file_id)
+        data = _oa_wrap.GetFileContent(file_id)
         data_io = BytesIO(data.read())
         logmsg(f"Uploading file {file_path} to storage...")
         _storage.upload_file(data_io, file_path)
@@ -330,7 +330,7 @@ def index():
     session['loc_messages'] = []
 
     # Get all the messages from the thread
-    history = _oai_client.beta.threads.messages.list(thread_id=thread_id, order="asc")
+    history = _oa_wrap.ListThreadMessages(thread_id=thread_id, order="asc")
     logmsg(f"Found {len(history.data)} messages in the thread history")
     for (i, msg) in enumerate(history.data):
 
@@ -349,24 +349,21 @@ def index():
 
 #===============================================================================
 def submit_message(assistant_id, thread_id, msg_text):
-    msg = _oai_client.beta.threads.messages.create(
+    msg = _oa_wrap.CreateMessage(
         thread_id=thread_id, role="user", content=msg_text
     )
-    run = _oai_client.beta.threads.runs.create(
+    run = _oa_wrap.CreateRun(
         thread_id=thread_id,
         assistant_id=assistant_id,
     )
     return msg, run
-
-def get_response(thread):
-    return _oai_client.beta.threads.messages.list(thread_id=thread.id, order="asc")
 
 # Possible run statuses:
 #  in_progress, requires_action, cancelling, cancelled, failed, completed, or expired
 
 #===============================================================================
 def get_thread_status(thread_id):
-    data = _oai_client.beta.threads.runs.list(thread_id=thread_id, limit=1).data
+    data = _oa_wrap.ListRuns(thread_id=thread_id, limit=1).data
     if data is None or len(data) == 0:
         return None, None
     return data[0].status, data[0].id
@@ -374,7 +371,7 @@ def get_thread_status(thread_id):
 #===============================================================================
 def cancel_thread(run_id, thread_id):
     while True:
-        run = _oai_client.beta.threads.runs.retrieve(run_id=run_id, thread_id=thread_id)
+        run = _oa_wrap.RetrieveRun(run_id=run_id, thread_id=thread_id)
         logmsg(f"Run status: {run.status}")
 
         if run.status in ["completed", "cancelled", "failed", "expired"]:
@@ -382,7 +379,7 @@ def cancel_thread(run_id, thread_id):
 
         if run.status in ["queued", "in_progress", "requires_action"]:
             logmsg("Cancelling thread...")
-            run = _oai_client.beta.threads.runs.cancel(run_id=run_id, thread_id=thread_id)
+            run = _oa_wrap.CancelRun(run_id=run_id, thread_id=thread_id)
             sleepForAPI()
             continue
 
@@ -460,7 +457,7 @@ def handle_required_action(run, thread_id):
 
     # Submit the tool outputs
     logmsg(f"Tool outputs: {tool_outputs}")
-    run = _oai_client.beta.threads.runs.submit_tool_outputs(
+    run = _oa_wrap.SubmitToolsOutputs(
         thread_id=thread_id,
         run_id=run.id,
         tool_outputs=tool_outputs,
@@ -499,7 +496,7 @@ def send_message():
     # Wait for the run to complete
     last_printed_status = None
     while True:
-        run = _oai_client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+        run = _oa_wrap.RetrieveRun(thread_id=thread_id, run_id=run.id)
         if run.status != last_printed_status:
             logmsg(f"Run status: {run.status}")
             last_printed_status = run.status
@@ -522,7 +519,7 @@ def send_message():
             break
 
     # Retrieve all the messages added after our last user message
-    new_messages = _oai_client.beta.threads.messages.list(
+    new_messages = _oa_wrap.ListThreadMessages(
         thread_id=thread_id,
         order="asc",
         after=msg.id
