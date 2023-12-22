@@ -17,6 +17,7 @@ import inspect
 from duckduckgo_search import ddg
 from storage import Storage
 from io import BytesIO
+import re
 
 # References:
 # - https://cookbook.openai.com/examples/assistants_api_overview_python
@@ -25,7 +26,7 @@ from io import BytesIO
 with open('config.json') as f:
     config = json.load(f)
 
-USER_BUCKET_PATH = "user_a_007784"
+USER_BUCKET_PATH = "user_a_00001"
 
 # Enable for debugging purposes (main overrides this if app.debug is True)
 ENABLE_LOGGING = False
@@ -201,7 +202,14 @@ def resolveAnnotations(out_msg, annotations, make_file_url):
 
             logmsg(f"Found file {file_id} associated with '{a.text}'")
 
-            file_url = make_file_url(file_id)  # Function to get the file URL using file_id
+            # Extract a "simple name" from the annotation text
+            # It's likely to be a full-pathname, so we just take the last part
+            # If there are no slashes, we take the whole name
+            simple_name = a.text.split('/')[-1] if '/' in a.text else a.text
+            # Replace any characters that are not alphanumeric, underscore, or hyphen with an underscore
+            simple_name = re.sub(r'[^\w\-.]', '_', simple_name)
+
+            file_url = make_file_url(file_id, simple_name)
 
             logmsg(f"Replacing file path {a.text} with URL {file_url}")
 
@@ -290,8 +298,17 @@ def clear_chat():
     return redirect(url_for('index'))
 
 #===============================================================================
-def make_file_url(file_id):
-    file_path = f"{USER_BUCKET_PATH}/{file_id}"
+def make_file_url(file_id, simple_name):
+    strippable_prefix = "file-"
+    new_name = file_id
+    # Strip the initial prefix (if any)
+    if new_name.startswith(strippable_prefix):
+        new_name = new_name[len(strippable_prefix):]
+    new_name += f"_{simple_name}"
+
+    # Out path in the storage is a mix of user ID, file ID and human-readable name
+    file_path = f"{USER_BUCKET_PATH}/{new_name}"
+
     if not _storage.file_exists(file_path):
         logmsg(f"Downloading file {file_id} from source...")
         data = _oai_client.files.content(file_id)
