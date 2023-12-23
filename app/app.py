@@ -8,7 +8,6 @@ import os
 import json
 import time
 from pyexpat.errors import messages
-from aiohttp import ClientError
 from flask import Flask, redirect, render_template, request, jsonify, session, url_for
 from dotenv import load_dotenv
 from openai_wrapper import OpenAIWrapper
