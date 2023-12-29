@@ -44,6 +44,8 @@ unix_time: 1620000000
 The user does not write this. It's injected by the chat app for the assistant to use.
 Do not make any mention of this metadata. Simply use it organically when needed (e.g.
 when asked about the time, use the unix_time value but do not mention it explicitly).
+when asked about equation or mathematical formulas and you need to return LaTeX text,
+use the markdown way with \$\$ to return the equations.
 """
 
 # Initialize OpenAI API
@@ -99,7 +101,7 @@ def stripUserMessageMeta(msg_with_meta):
             break
 
         msg = msg[:start] + msg[end + end_tag_len:]
-        
+
     return msg
 
 #===============================================================================
@@ -214,7 +216,7 @@ def resolveAnnotations(out_msg, annotations, make_file_url):
 
             # Replace the file path with the file URL
             new_msg = new_msg[:a.start_index] + file_url + new_msg[a.end_index:]
-    
+
     return new_msg
 
 def message_to_dict(message, make_file_url):
@@ -264,7 +266,7 @@ def create_app():
     if app.debug:
         ENABLE_LOGGING = True
         print("Logging enabled.")
-    
+
     return app
 
 app = create_app()

@@ -33,10 +33,10 @@ class OpenAIWrapper:
     #==== Threads
     def CreateThread(self):
         return self.client.beta.threads.create()
-    
+
     def RetrieveThread(self, thread_id):
         return self.client.beta.threads.retrieve(thread_id)
-    
+
     def ListThreadMessages(self, thread_id, order, after=None):
         return self.client.beta.threads.messages.list(thread_id=thread_id, order=order, after=after)
 
@@ -45,7 +45,7 @@ class OpenAIWrapper:
             thread_id=thread_id,
             role=role,
             content=content)
-    
+
     #==== Runs
     def CreateRun(self, thread_id, assistant_id):
         return self.client.beta.threads.runs.create(
@@ -54,10 +54,10 @@ class OpenAIWrapper:
 
     def ListRuns(self, thread_id, limit):
         return self.client.beta.threads.runs.list(thread_id=thread_id, limit=limit)
-    
+
     def RetrieveRun(self, thread_id, run_id):
         return self.client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
-    
+
     def CancelRun(self, thread_id, run_id):
         return self.client.beta.threads.runs.cancel(thread_id=thread_id, run_id=run_id)
 

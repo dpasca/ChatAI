@@ -59,7 +59,7 @@ class Storage:
         if self.ENABLE_LOGGING:
             caller = inspect.currentframe().f_back.f_code.co_name
             print(f"[{caller}] {msg}")
-    
+
     def logerr(self, msg):
         if self.ENABLE_LOGGING:
             caller = inspect.currentframe().f_back.f_code.co_name
