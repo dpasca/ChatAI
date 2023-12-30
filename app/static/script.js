@@ -48,14 +48,6 @@ function appendMessage(message, assistant_name='') {
     // For every piece of content
     for (let content of message.content) {
         if (content.type == 'text') {
-
-            // Display as Markdown
-            const defaultStyles = `
-            <link rel="stylesheet"
-                href="https://cdn.jsdelivr.net/gh/sindresorhus/github-markdown-css@4/github-markdown.min.css" />
-            <link rel="stylesheet"
-                href="https://cdn.jsdelivr.net/gh/PrismJS/prism@1/themes/prism.min.css" />`;
-
             // The final message
             const reformattedContent = reformatIndentation(content.value);
             const htmlContent = md.render(reformattedContent);
