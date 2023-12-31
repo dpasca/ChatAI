@@ -44,8 +44,13 @@ unix_time: 1620000000
 The user does not write this. It's injected by the chat app for the assistant to use.
 Do not make any mention of this metadata. Simply use it organically when needed (e.g.
 when asked about the time, use the unix_time value but do not mention it explicitly).
-when asked about equation or mathematical formulas and you need to return LaTeX text,
-use the markdown way with \$\$ to return the equations.
+"""
+
+FORMAT_INSTRUCT = f"""
+When asked about equations or mathematical formulas you should use LaTeX formatting.
+For each piece of mathematical content, you should prefix it with `$$` and postfix it
+with with `$$`.
+Example: `(\Delta x)` must be written as `$$(\Delta x)$$`.
 """
 
 # Initialize OpenAI API
@@ -144,7 +149,9 @@ def createAssistant():
 
     logmsg(f"Tools: {tools}")
 
-    full_instructions = "\n".join(config["assistant_instructions"]) + "\n" + MESSAGEMETA_INSTUCT
+    full_instructions = ("\n".join(config["assistant_instructions"])
+        + "\n" + MESSAGEMETA_INSTUCT
+        + "\n" + FORMAT_INSTRUCT)
 
     codename = config["assistant_codename"]
 
