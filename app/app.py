@@ -46,11 +46,11 @@ Do not make any mention of this metadata. Simply use it organically when needed 
 when asked about the time, use the unix_time value but do not mention it explicitly).
 """
 
-FORMAT_INSTRUCT = f"""
+FORMAT_INSTRUCT = """
 When asked about equations or mathematical formulas you should use LaTeX formatting.
-For each piece of mathematical content, you should prefix it with `$$` and postfix it
-with with `$$`.
-Example: `(\Delta x)` must be written as `$$(\Delta x)$$`.
+For each piece of mathematical content:
+ 1. If the content is inline, use `$` as prefix and postfix (e.g. `$\Delta x$`)
+ 2. If the content is a block, use `$$` as prefix and postfix (e.g. `\n$$\sigma = \frac{1}{2}at^2$$\n` here the `\n` are newlines)
 """
 
 # Initialize OpenAI API
