@@ -8,12 +8,16 @@
 // Instantiate markdown-it with Prism.js for syntax highlighting
 const md = window.markdownit({
     highlight: function (str, lang) {
-        if (lang && Prism.languages[lang]) {
+        if (lang && hljs.getLanguage(lang)) {
             try {
-                return `<pre class="language-${lang}"><code class="language-${lang}">${Prism.highlight(str, Prism.languages[lang], lang)}</code></pre>`;
+                return `<pre class="language-${lang}"><code class="language-${lang}">${hljs.highlight(lang, str).value}</code></pre>`;
             } catch (_) {}
         }
-        // Use external default escaping
+        // use highlight.js's autodetection
+        try {
+            return `<pre class="language-plaintext"><code>${hljs.highlightAuto(str).value}</code></pre>`;
+        } catch (_) {}
+        // if all else fails, use the original escaping
         return '<pre class="language-plaintext"><code>' + md.utils.escapeHtml(str) + '</code></pre>';
     }
 }).use(math_plugin);
