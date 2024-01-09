@@ -12,6 +12,8 @@ from flask import Flask, redirect, render_template, request, jsonify, session, u
 from dotenv import load_dotenv
 from openai_wrapper import OpenAIWrapper
 import datetime
+from datetime import datetime
+import pytz # For timezone conversion
 import inspect
 from duckduckgo_search import ddg
 from storage import Storage
@@ -145,6 +147,24 @@ def createAssistant():
         "function": {
             "name": "get_user_info",
             "description": "Get the user info, such as timezone and user-agent (browser)",
+        }
+    })
+
+    tools.append(
+    {
+        "type": "function",
+        "function": {
+            "name": "get_unix_time",
+            "description": "Get the current unix time",
+        }
+    })
+
+    tools.append(
+    {
+        "type": "function",
+        "function": {
+            "name": "get_user_local_time",
+            "description": "Get the user local time",
         }
     })
 
@@ -444,7 +464,13 @@ def handle_required_action(run, thread_id):
     tool_outputs = []
     for tool_call in run.required_action.submit_tool_outputs.tool_calls:
         name = tool_call.function.name
-        arguments = json.loads(tool_call.function.arguments)
+
+        try:
+            arguments = json.loads(tool_call.function.arguments)
+        except:
+            logerr(f"Failed to parse arguments. function: {name}, arguments: {tool_call.function.arguments}")
+            continue
+
         logmsg(f"Function Name: {name}")
         logmsg(f"Arguments: {arguments}")
 
@@ -453,6 +479,16 @@ def handle_required_action(run, thread_id):
             responses = ddg(arguments["query"], max_results=10)
         elif name == "get_user_info":
             responses = { "user_info": session['user_info'] }
+        elif name == "get_unix_time":
+            responses = { "unix_time": int(time.time()) }
+            logmsg(f"Unix time: {responses['unix_time']}")
+        elif name == "get_user_local_time":
+            timezone = session['user_info']['timezone']
+            tz_timezone = pytz.timezone(timezone)
+            logmsg(f"User timezone: {timezone}, pytz timezone: {tz_timezone}")
+            user_time = datetime.now(tz_timezone)
+            logmsg(f"User local time: {user_time}")
+            responses = { "user_local_time": json.dumps(user_time, default=str) }
         else:
             logerr(f"Unknown function {name}. Falling back to web search !")
             name_to_human_friendly = name.replace("_", " ")
@@ -480,9 +516,9 @@ def handle_required_action(run, thread_id):
 #===============================================================================
 def timing_decorator(func):
     def wrapper(*args, **kwargs):
-        start = datetime.datetime.now()
+        start = datetime.now()
         result = func(*args, **kwargs)
-        end = datetime.datetime.now()
+        end = datetime.now()
         logmsg(f"Function {func.__name__} took {end - start} to complete")
         return result
     return wrapper
