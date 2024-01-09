@@ -11,6 +11,7 @@ See commits for other contributors.
 
 - AI chatbot based on OpenAI and Assistant API (beta)
 - Sense of time and location using prompt injection
+- Web search using function-calling and DuckDuckGo
 - Image generation and storage
 - Support for PDF knowledge files (need to upload manually to OpenAI assistant settings)
 - Code syntax highlighting and LaTeX rendering
