@@ -93,7 +93,17 @@ The app will be available globally at `https://yourappname.ondigitalocean.app`.
 
 ## Knowledge files
 
-An size optimization script is provided to optimize PDF files for the Assistant API.
+This app uses the Assistant API from OpenAI, which allows to upload knowledge files
+in various formats.
+
+After a first run of the app, an assistant with the `assistant_codename` from `config.json`
+will show in the the [Assistant API dashboard](https://platform.openai.com/assistants).
+
+Find the assistant there, click on `...` -> `Edit` and add the knowledge files.
+
+### Optimization
+
+A size optimization script is provided for PDF files for the Assistant API.
 
 This script assumes that images are not relevant.
 
@@ -102,6 +112,8 @@ This script assumes that images are not relevant.
 3. `cd knowledge`
 4. `./optimize_pdfs.sh src _output`
 4. Optimized files will be in `knowledge/_output`
+
+https://platform.openai.com/assistants
 
 ## License
 
