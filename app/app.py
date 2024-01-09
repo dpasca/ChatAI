@@ -222,14 +222,17 @@ def append_loc_message(message):
     get_loc_messages().append(message)
     session.modified = True
 
+def isImageAnnotation(a):
+    return a.type == "file_path" and a.text.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
+
 # Replace the file paths with actual URLs
-def resolveAnnotations(out_msg, annotations, make_file_url):
+def resolveImageAnnotations(out_msg, annotations, make_file_url):
     new_msg = out_msg
     # Sort annotations by start_index in descending order
     sorted_annotations = sorted(annotations, key=lambda x: x.start_index, reverse=True)
 
     for a in sorted_annotations:
-        if a.type == "file_path":
+        if isImageAnnotation(a):
             file_id = a.file_path.file_id
 
             logmsg(f"Found file {file_id} associated with '{a.text}'")
@@ -250,6 +253,45 @@ def resolveAnnotations(out_msg, annotations, make_file_url):
 
     return new_msg
 
+def resolveCiteAnnotations(out_msg, annotations):
+    citations = []
+    for index, a in enumerate(annotations):
+
+        #if isImageAnnotation(a):
+        #    continue
+
+        logmsg(f"Found citation '{a.text}'")
+        logmsg(f"out_msg: {out_msg}")
+        # Replace the text with a footnote
+        out_msg = out_msg.replace(a.text, f' [{index}]')
+
+        logmsg(f"out_msg: {out_msg}")
+
+        # Gather citations based on annotation attributes
+        if (file_citation := getattr(a, 'file_citation', None)):
+            logmsg(f"file_citation: {file_citation}")
+            cited_file = _oa_wrap.client.files.retrieve(file_citation.file_id)
+            citations.append(f'[{index}] {file_citation.quote} from {cited_file.filename}')
+        elif (file_path := getattr(a, 'file_path', None)):
+            logmsg(f"file_path: {file_path}")
+            cited_file = _oa_wrap.client.files.retrieve(file_path.file_id)
+            citations.append(f'[{index}] Click <here> to download {cited_file.filename}')
+            # Note: File download functionality not implemented above for brevity
+
+    # Add footnotes to the end of the message before displaying to user
+    out_msg += '\n' + '\n'.join(citations)
+    return out_msg
+
+import re
+
+# Deal with the bug where empty annotations are added to the message
+# We go and remove all 【*†*】blocks
+def stripEmptyAnnotationsBug(out_msg):
+    # This pattern matches 【*†*】blocks
+    pattern = r'【\d+†.*?】'
+    # Remove all occurrences of the pattern
+    return re.sub(pattern, '', out_msg)
+
 def message_to_dict(message, make_file_url):
     result = {
         "role": message.role,
@@ -265,10 +307,19 @@ def message_to_dict(message, make_file_url):
 
             # Apply whatever annotations may be there
             if content.text.annotations is not None:
-                out_msg = resolveAnnotations(
+
+                print(f"Annotations: {content.text.annotations}")
+
+                out_msg = resolveImageAnnotations(
                     out_msg=out_msg,
                     annotations=content.text.annotations,
                     make_file_url=make_file_url)
+
+                out_msg = resolveCiteAnnotations(
+                    out_msg=out_msg,
+                    annotations=content.text.annotations)
+
+                out_msg = stripEmptyAnnotationsBug(out_msg)
 
             result["content"].append({
                 "value": out_msg,
