@@ -4,8 +4,10 @@ A basic AI chatbot based on OpenAI, currently using the Assistant API (beta).
 
 The web app is based on _Flask_. It's been tested to run on DigitalOcean App platform.
 
-This application is developed mainly by [Davide Pasca](https://github.com/dpasca).
+This application is mainly developed by [Davide Pasca](https://github.com/dpasca).
 See commits for other contributors.
+
+![](docs/chatai_sshot_01.webp)
 
 ## Features
 
@@ -73,6 +75,18 @@ The app will be available locally at `http://127.0.0.1:8080`.
 ### Production
 
 The app will be available globally at `https://yourappname.ondigitalocean.app`.
+
+## Knowledge files
+
+An size optimization script is provided to optimize PDF files for the Assistant API.
+
+This script assumes that images are not relevant.
+
+1. Install GhostScript (i.e. `brew install ghostscript`)
+2. Put your knowledge files (currently PDF format) into `knowledge/src` directory.
+3. `cd knowledge`
+4. `./optimize_pdfs.sh src _output`
+4. Optimized files will be in `knowledge/_output`
 
 ## License
 
