@@ -50,7 +50,7 @@ Do not make any mention of this metadata. Simply use it organically when needed 
 when asked about the time, use the unix_time value but do not mention it explicitly).
 """
 
-FORMAT_INSTRUCT = """
+FORMAT_INSTRUCT = r"""
 When asked about equations or mathematical formulas you should use LaTeX formatting.
 For each piece of mathematical content:
  1. If the content is inline, use `$` as prefix and postfix (e.g. `$\Delta x$`)
