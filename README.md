@@ -7,7 +7,7 @@ The web app is based on _Flask_. It's been tested to run on DigitalOcean App pla
 This application is mainly developed by [Davide Pasca](https://github.com/dpasca).
 See commits for other contributors.
 
-![](docs/chatai_sshot_01.webp)
+<img src="docs/chatai_sshot_01.webp" width="500">
 
 ## Features
 
