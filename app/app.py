@@ -25,6 +25,10 @@ import re
 with open('config.json') as f:
     config = json.load(f)
 
+# Load the instructions
+with open(config['assistant_instructions'], 'r') as f:
+    assistant_instructions = f.read()
+
 USER_BUCKET_PATH = "user_a_00001"
 
 # Enable for debugging purposes (main overrides this if app.debug is True)
@@ -149,7 +153,7 @@ def createAssistant():
 
     logmsg(f"Tools: {tools}")
 
-    full_instructions = ("\n".join(config["assistant_instructions"])
+    full_instructions = (assistant_instructions
         + "\n" + MESSAGEMETA_INSTUCT
         + "\n" + FORMAT_INSTRUCT)
 
@@ -351,6 +355,7 @@ def index():
 
     return render_template(
                 'chat.html',
+                app_title=config["app_title"],
                 assistant_name=config["assistant_name"],
                 messages=get_loc_messages(),
                 app_version=config["app_version"])
