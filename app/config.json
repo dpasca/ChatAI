@@ -4,6 +4,7 @@
     "enable_retrieval": true,
     "assistant_name": "Mei",
     "app_title" : "Chat with Mei",
+    "assistant_avatar": "assistant_avatar.jpg",
     "assistant_codename": "mei_0005",
     "assistant_instructions": "assistant_instructions.md"
 }

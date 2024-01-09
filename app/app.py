@@ -377,6 +377,7 @@ def index():
                 'chat.html',
                 app_title=config["app_title"],
                 assistant_name=config["assistant_name"],
+                assistant_avatar=config["assistant_avatar"],
                 messages=get_loc_messages(),
                 app_version=config["app_version"])
 
