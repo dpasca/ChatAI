@@ -24,14 +24,29 @@ See `requirements.txt` for Python dependencies.
 
 ### Environment variables
 
-- `OPENAI_API_KEY` is the API key for OpenAI.
-- `CHATAI_FLASK_SECRET_KEY` is the secret key for Flask.
-- `DO_SPACES_ACCESS_KEY` is the access key for DigitalOcean Spaces.
-- `DO_SPACES_SECRET_KEY` is the secret key for DigitalOcean Spaces.
-- `DO_STORAGE_CONTAINER` is the name of the container in DigitalOcean Spaces (e.g. `myai_spaces`).
-- `DO_STORAGE_SERVER` is the URL of the DigitalOcean Spaces server (e.g. `https://myai.sfo.digitaloceanspaces.com`).
+- `OPENAI_API_KEY` is the API key for OpenAI (get it from the OpenAI dashboard)
+- `CHATAI_FLASK_SECRET_KEY` a random string used by Flask to encrypt cookies
+  - e.g. `python -c "import os; print(os.urandom(24).hex())"`
+- `DO_SPACES_ACCESS_KEY` is the access key for DigitalOcean Spaces
+- `DO_SPACES_SECRET_KEY` is the secret key for DigitalOcean Spaces
+- `DO_STORAGE_CONTAINER` is the name of the container in DigitalOcean Spaces
+  - e.g. `myai_spaces`
+- `DO_STORAGE_SERVER` is the URL of the DigitalOcean Spaces server
+  - e.g. `https://myai.sfo.digitaloceanspaces.com`
+
+See below on how to set the Digital Ocean storage variables.
 
 ## Installation 
+
+### Spaces and containers
+
+Create a DigitalOcean Space and a container for the app.
+
+The storage container name and server URL need to be placed in the environment variables,
+both in the `.env` file for local development and in the app settings for production.
+
+`DO_SPACES_ACCESS_KEY`, `DO_SPACES_SECRET_KEY` and `DO_STORAGE_CONTAINER` are from
+menu *API -> Spaces Keys -> Generate New Key*
 
 ### Local development
 
