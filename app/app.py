@@ -34,7 +34,7 @@ with open(config['assistant_instructions'], 'r') as f:
 USER_BUCKET_PATH = "user_a_00001"
 
 # Enable for debugging purposes (main overrides this if app.debug is True)
-ENABLE_LOGGING = False
+ENABLE_LOGGING = os.getenv('FORCE_ENABLE_LOGGING', '0') == '1'
 ENABLE_SLEEP_LOGGING = False
 
 ENABLE_WEBSEARCH = True
@@ -308,7 +308,7 @@ def message_to_dict(message, make_file_url):
             # Apply whatever annotations may be there
             if content.text.annotations is not None:
 
-                print(f"Annotations: {content.text.annotations}")
+                logmsg(f"Annotations: {content.text.annotations}")
 
                 out_msg = resolveImageAnnotations(
                     out_msg=out_msg,
@@ -347,7 +347,9 @@ def create_app():
     global ENABLE_LOGGING
     if app.debug:
         ENABLE_LOGGING = True
-        print("Logging enabled.")
+
+    if ENABLE_LOGGING:
+        print("Logging is ENABLED")
 
     return app
 
