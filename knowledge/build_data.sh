@@ -2,8 +2,8 @@
 
 # Usage: ./build_data.sh <source_directory> <output_directory>
 
-src_dir=$1
-output_dir=$2
+src_dir=${1:-src}
+output_dir=${2:-_output}
 
 # Call optimize_pdfs.sh with the source and output directories
 ./optimize_pdfs.sh "$src_dir" "$output_dir"
