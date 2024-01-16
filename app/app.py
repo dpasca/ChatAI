@@ -164,7 +164,7 @@ def createAssistant():
         "type": "function",
         "function": {
             "name": "get_user_local_time",
-            "description": "Get the user local time",
+            "description": "Get the user local time and timezone",
         }
     })
 
@@ -536,7 +536,9 @@ def handle_required_action(run, thread_id):
             logmsg(f"User timezone: {timezone}, pytz timezone: {tz_timezone}")
             user_time = datetime.now(tz_timezone)
             logmsg(f"User local time: {user_time}")
-            responses = { "user_local_time": json.dumps(user_time, default=str) }
+            responses = {
+                "user_local_time": json.dumps(user_time, default=str),
+                "user_timezone": timezone }
         else:
             logerr(f"Unknown function {name}. Falling back to web search !")
             name_to_human_friendly = name.replace("_", " ")
