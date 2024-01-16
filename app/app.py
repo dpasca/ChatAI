@@ -179,25 +179,19 @@ def createAssistant():
 
     codename = config["assistant_codename"]
 
-    # Reuse the assistant if it already exists
-    for assist in _oa_wrap.ListAssistants().data:
-        if assist.name == codename:
-            logmsg(f"Found existing assistant with name {codename}")
-            # Update the assistant
-            _oa_wrap.UpdateAssistant(
-                assistant_id=assist.id,
-                instructions=full_instructions,
-                tools=tools,
-                model=config["model_version"])
-            return assist
-
-    # Create a new assistant
-    logmsg(f"Creating new assistant with name {codename}")
-    return _oa_wrap.CreateAssistant(
+    # Create or update the assistant
+    assist, was_created = _oa_wrap.CreateOrUpdateAssistant(
         name=codename,
         instructions=full_instructions,
         tools=tools,
         model=config["model_version"])
+
+    if was_created:
+        logmsg(f"Created new assistant with name {codename}")
+    else:
+        logmsg(f"Updated existing assistant with name {codename}")
+
+    return assist
 
 # Create the thread if it doesn't exist
 def createThread(force_new=False):

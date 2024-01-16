@@ -30,6 +30,15 @@ class OpenAIWrapper:
     def ListAssistants(self):
         return self.client.beta.assistants.list()
 
+    # Helper to create or update an assistant
+    # Returns assistant, was_created
+    def CreateOrUpdateAssistant(self, name, instructions, tools, model) -> (object, bool):
+        assists = self.ListAssistants()
+        for assist in assists:
+            if assist.name == name:
+                return self.UpdateAssistant(assist.id, instructions, tools, model), False
+        return self.CreateAssistant(name, instructions, tools, model), True
+
     #==== Threads
     def CreateThread(self):
         return self.client.beta.threads.create()
