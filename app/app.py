@@ -97,7 +97,6 @@ def prepareUserMessageMeta():
     return f"<{META_TAG}>\nunix_time: {int(time.time())}\n</{META_TAG}>\n"
 
 def stripUserMessageMeta(msg_with_meta):
-    # Remove <message_meta> </message_meta> and everything in between
     msg = msg_with_meta
     begin_tag = f"<{META_TAG}>"
     end_tag = f"</{META_TAG}>"
@@ -107,11 +106,15 @@ def stripUserMessageMeta(msg_with_meta):
         start = msg.find(begin_tag)
         if start == -1:
             break
-        end = msg.find(end_tag)
+        end = msg.find(end_tag, start)
         if end == -1:
             break
 
-        msg = msg[:start] + msg[end + end_tag_len:]
+        # Check if the character following the end tag is a newline
+        if msg[end + end_tag_len:end + end_tag_len + 1] == "\n":
+            msg = msg[:start] + msg[end + end_tag_len + 1:]
+        else:
+            msg = msg[:start] + msg[end + end_tag_len:]
 
     return msg
 
@@ -273,7 +276,9 @@ def resolveCiteAnnotations(out_msg, annotations):
             # Note: File download functionality not implemented above for brevity
 
     # Add footnotes to the end of the message before displaying to user
-    out_msg += '\n' + '\n'.join(citations)
+    if len(citations) > 0:
+        out_msg += '\n' + '\n'.join(citations)
+
     return out_msg
 
 import re
