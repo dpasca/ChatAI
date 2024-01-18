@@ -16,7 +16,7 @@ from datetime import datetime
 import pytz # For timezone conversion
 import inspect
 from duckduckgo_search import ddg
-from storage import Storage
+from StorageCloud import StorageCloud as Storage
 from io import BytesIO
 import re
 
@@ -388,15 +388,15 @@ def make_file_url(file_id, simple_name):
     # Out path in the storage is a mix of user ID, file ID and human-readable name
     file_path = f"{USER_BUCKET_PATH}/{new_name}"
 
-    if not _storage.file_exists(file_path):
+    if not _storage.FileExists(file_path):
         logmsg(f"Downloading file {file_id} from source...")
         data = _oa_wrap.GetFileContent(file_id)
         data_io = BytesIO(data.read())
         logmsg(f"Uploading file {file_path} to storage...")
-        _storage.upload_file(data_io, file_path)
+        _storage.UploadFile(data_io, file_path)
 
     logmsg(f"Getting file url for {file_id}, path: {file_path}")
-    return _storage.get_file_url(file_path)
+    return _storage.GetFileURL(file_path)
 
 #===============================================================================
 @app.route('/')

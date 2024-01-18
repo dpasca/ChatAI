@@ -1,5 +1,5 @@
 #==================================================================
-# storage.py
+# StorageCloud.py
 #
 # Author: Davide Pasca, 2023/12/23
 # Desc: Storage class for DigitalOcean Spaces
@@ -9,14 +9,14 @@ import inspect
 import boto3
 from botocore.exceptions import ClientError
 
-class Storage:
+class StorageCloud:
     def __init__(self, bucket, ENABLE_LOGGING=False):
         self.bucket = bucket
         self.ENABLE_LOGGING = ENABLE_LOGGING
 
-        self.s3 = self.create_storage()
+        self.s3 = self.createStorage()
 
-    def create_storage(self):
+    def createStorage(self):
         self.logmsg("Creating storage...")
         s3 = boto3.client(
             's3',
@@ -26,14 +26,14 @@ class Storage:
         )
         return s3
 
-    def file_exists(self, object_name):
+    def FileExists(self, object_name):
         try:
             self.s3.head_object(Bucket=self.bucket, Key=object_name)
             return True
         except ClientError:
             return False
 
-    def upload_file(self, data_bytes, object_name):
+    def UploadFile(self, data_bytes, object_name):
         self.logmsg(f"Uploading file {object_name}...")
         self.s3.upload_fileobj(
             data_bytes,
@@ -46,7 +46,7 @@ class Storage:
     #    with open(file_path, "wb") as file:
     #        self.s3.download_fileobj(self.bucket, object_name, file)
 
-    def get_file_url(self, object_name):
+    def GetFileURL(self, object_name):
         self.logmsg(f"Getting file url for {object_name}...")
         try:
             url = f"{os.getenv('DO_STORAGE_SERVER')}/{self.bucket}/{object_name}"
