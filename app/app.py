@@ -15,11 +15,11 @@ import datetime
 from datetime import datetime
 import pytz # For timezone conversion
 import inspect
-from duckduckgo_search import ddg
 from StorageCloud import StorageCloud as Storage
 from io import BytesIO
 from logger import *
 from OAIUtils import *
+import AssistTools
 
 # References:
 # - https://cookbook.openai.com/examples/assistants_api_overview_python
@@ -101,52 +101,13 @@ def createAssistant():
     tools = []
     tools.append({"type": "code_interpreter"})
 
-    if ENABLE_WEBSEARCH:
-        tools.append(
-        {
-            "type": "function",
-            "function": {
-                "name": "perform_web_search",
-                "description": "Perform a web search for any unknown or current information",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The search query"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-        })
+    AssistTools.SetSession(session)
 
-    tools.append(
-    {
-        "type": "function",
-        "function": {
-            "name": "get_user_info",
-            "description": "Get the user info, such as timezone and user-agent (browser)",
-        }
-    })
-
-    tools.append(
-    {
-        "type": "function",
-        "function": {
-            "name": "get_unix_time",
-            "description": "Get the current unix time",
-        }
-    })
-
-    tools.append(
-    {
-        "type": "function",
-        "function": {
-            "name": "get_user_local_time",
-            "description": "Get the user local time and timezone",
-        }
-    })
+    # Setup the tools
+    for name, defn in AssistTools.ToolDefinitions.items():
+        if (not ENABLE_WEBSEARCH) and name == "perform_web_search":
+            continue
+        tools.append({ "type": "function", "function": defn })
 
     if config["enable_retrieval"]:
         tools.append({"type": "retrieval"})
@@ -435,29 +396,11 @@ def handle_required_action(run, thread_id):
         logmsg(f"Function Name: {name}")
         logmsg(f"Arguments: {arguments}")
 
-        responses = None
-        if name == "perform_web_search":
-            responses = ddg(arguments["query"], max_results=10)
-        elif name == "get_user_info":
-            responses = { "user_info": session['user_info'] }
-        elif name == "get_unix_time":
-            responses = { "unix_time": int(time.time()) }
-            logmsg(f"Unix time: {responses['unix_time']}")
-        elif name == "get_user_local_time":
-            timezone = session['user_info']['timezone']
-            tz_timezone = pytz.timezone(timezone)
-            logmsg(f"User timezone: {timezone}, pytz timezone: {tz_timezone}")
-            user_time = datetime.now(tz_timezone)
-            logmsg(f"User local time: {user_time}")
-            responses = {
-                "user_local_time": json.dumps(user_time, default=str),
-                "user_timezone": timezone }
+        # Look up the function in the dictionary and call it
+        if name in AssistTools.ToolActions:
+            responses = AssistTools.ToolActions[name](arguments)
         else:
-            logerr(f"Unknown function {name}. Falling back to web search !")
-            name_to_human_friendly = name.replace("_", " ")
-            query = f"What is {name_to_human_friendly} of " + " ".join(arguments.values())
-            logmsg(f"Submitting made-up query: {query}")
-            responses = ddg(query, max_results=3)
+            responses = AssistTools.fallback_tool_function(name, arguments)
 
         if responses is not None:
             tool_outputs.append(
