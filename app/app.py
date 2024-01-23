@@ -95,13 +95,17 @@ def stripUserMessageMeta(msg_with_meta):
 
     return msg
 
+# Callback to get the user info from the session
+def local_get_user_info():
+    return session['user_info']
+
 #===============================================================================
 # Create the assistant if it doesn't exist
 def createAssistant():
+    AssistTools.SetSuperGetUserInfoFn(local_get_user_info)
+
     tools = []
     tools.append({"type": "code_interpreter"})
-
-    AssistTools.SetSession(session)
 
     # Setup the tools
     for name, defn in AssistTools.ToolDefinitions.items():
