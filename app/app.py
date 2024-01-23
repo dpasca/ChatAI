@@ -153,18 +153,15 @@ def createThread(force_new=False):
     return thread.id
 
 # Local messages management (a cache of the thread)
-def get_loc_messages():
+def getLocMessages():
     # Create or get the session messages list
     return session.setdefault('loc_messages', [])
 
-def append_loc_message(message):
-    get_loc_messages().append(message)
+def appendLocMessage(message):
+    getLocMessages().append(message)
     session.modified = True
 
-def isImageAnnotation(a):
-    return a.type == "file_path" and a.text.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
-
-def message_to_dict(message, make_file_url):
+def messageToLocMessage(message, make_file_url):
     result = {
         "role": message.role,
         "content": []
@@ -293,8 +290,8 @@ def index():
 
         # Append message to messages list
         logmsg(f"Message {i} ({msg.role}): {msg.content}")
-        append_loc_message(
-            message_to_dict(
+        appendLocMessage(
+            messageToLocMessage(
                 message=msg,
                 make_file_url=make_file_url))
 
@@ -303,7 +300,7 @@ def index():
                 app_title=config["app_title"],
                 assistant_name=config["assistant_name"],
                 assistant_avatar=config["assistant_avatar"],
-                messages=get_loc_messages(),
+                messages=getLocMessages(),
                 app_version=config["app_version"])
 
 #===============================================================================
@@ -488,11 +485,10 @@ def send_message():
     replies = []
     for msg in new_messages.data:
         # Append message to messages list
-        message_dict = message_to_dict(msg, make_file_url)
-
-        append_loc_message(message_dict)
+        locMessage = messageToLocMessage(msg, make_file_url)
+        appendLocMessage(locMessage)
         # We only want the content of the message
-        replies.append(message_dict)
+        replies.append(locMessage)
 
     logmsg(f"Replies: {replies}")
 
