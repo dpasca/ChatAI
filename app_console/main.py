@@ -18,7 +18,7 @@ from io import BytesIO
 load_dotenv()
 
 # Update the path for the modules below
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../Common'))
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../app_web/Common'))
 from OpenAIWrapper import OpenAIWrapper
 from StorageLocal import StorageLocal as Storage
 from logger import *

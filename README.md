@@ -92,6 +92,9 @@ This is an example for DigitalOcean. Change the steps as needed if you'll be usi
 2. Create an App under the Project.
 3. The first step of the app creation will ask where to get the code from. You should select this GitHub repository.
 4. Set the required environment variables in the app (to update them later, go to *Manage -> Apps -> Your app name -> Settings -> App-Level Environment Variables*).
+5. Go to the app's *Overview* page, click on the app name link to go to *Component Settings*.
+   - Set *Source Directory* to `app_web`
+   - Set *Run Command* to `python app.py`
 
 ### Usage 
 

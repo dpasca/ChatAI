@@ -15,7 +15,7 @@ import inspect
 from io import BytesIO
 
 # Update the path for the modules below
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../Common'))
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Common'))
 from OpenAIWrapper import OpenAIWrapper
 from StorageCloud import StorageCloud as Storage
 from logger import *
