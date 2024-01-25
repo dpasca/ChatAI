@@ -1,28 +1,50 @@
 # ChatAI
 
-A basic AI chatbot based on OpenAI, currently using the Assistant API (beta).
+This is a chatbot based on OpenAI with Assistant API,
+implementing agents and function-calling for fact-checking.
 
-The web app is based on _Flask_. It's been tested to run on DigitalOcean App platform.
+It runs both as a **console app** and as a **web app**, with a shared codebase.
+The web app is based on _Flask_ and it's tested to run on DigitalOcean App platform.
 
-This application is mainly developed by [Davide Pasca](https://github.com/dpasca).
+This application is mainly developed by [Davide Pasca](https://github.com/dpasca).\
 See commits for other contributors.
-
-<img src="docs/chatai_sshot_01.webp" width="500">
 
 ## Features
 
 - AI chatbot based on OpenAI and Assistant API (beta)
+- Real-time fact-checking using agents
 - Sense of time and location using prompt injection
 - Web search using function-calling and DuckDuckGo
-- Image generation and storage
+- Image generation (Python plotting) and storage
 - Support for PDF knowledge files (need to upload manually to OpenAI assistant settings)
 - Code syntax highlighting and LaTeX rendering
 
-## Requirements
+## Quick start (console app)
 
-See `requirements.txt` for Python dependencies.
+<img src="docs/agentchat_sshot_02.webp" width="500">
+
+### Setup
+
+It's suggested to use a virtual environment for Python.
+
+1. Set `OPENAI_API_KEY` (get it from the OpenAI dashboard) in your
+environment variables, or in a `.env` file in the `app_console` directory
+2. Install the dependencies: `cd app_console && pip install -r requirements.txt`
+
+### Run
+
+`cd app_console && python main.py`
+
+Use `python main.py --clear` to clear the chat history.
+
+## Web app
+
+<img src="docs/chatai_sshot_01.webp" width="250">
 
 ### Environment variables
+
+The web app requires the following environment variables.
+Set them in the `.env` file for local development and in the app settings for production:
 
 - `OPENAI_API_KEY` is the API key for OpenAI (get it from the OpenAI dashboard)
 - `CHATAI_FLASK_SECRET_KEY` a random string used by Flask to encrypt cookies
@@ -34,9 +56,7 @@ See `requirements.txt` for Python dependencies.
 - `DO_STORAGE_SERVER` is the URL of the DigitalOcean Spaces server
   - e.g. `https://myai.sfo.digitaloceanspaces.com`
 
-See below on how to set the Digital Ocean storage variables.
-
-## Installation 
+See below on how to set the Digital Ocean *storage* variables.
 
 ### Spaces and containers
 
@@ -52,12 +72,9 @@ menu *API -> Spaces Keys -> Generate New Key*
 
 It's suggested to use a virtual environment for Python.
 
-Install _Flask_.
-
-Install the dependencies with `pip install -r requirements.txt`.
-
-Create a `.env` file in the root directory with the following variables:
-
+1. Install _Flask_
+2. Install the dependencies with `pip install -r requirements.txt`
+3. Create a `.env` file in the root directory with the following variables:
 ```
 OPENAI_API_KEY=********
 CHATAI_FLASK_SECRET_KEY=********
@@ -69,25 +86,22 @@ DO_STORAGE_SERVER=https://********
 
 ### Production
 
-This is an example in the case of DigitalOcean. Change the steps as needed if you'll be using a different provider, or your own server.
+This is an example for DigitalOcean. Change the steps as needed if you'll be using a different provider, or your own server.
 
 1. Created a dedicated Project in DigitalOcean, if required.
 2. Create an App under the Project.
 3. The first step of the app creation will ask where to get the code from. You should select this GitHub repository.
 4. Set the required environment variables in the app (to update them later, go to *Manage -> Apps -> Your app name -> Settings -> App-Level Environment Variables*).
 
-## Usage 
+### Usage 
 
-### Local development
+#### Local development
 
-```
-cd app
-flask --debug run --host=0.0.0.0 --port=8080
-```
+`cd app && flask --debug run --host=0.0.0.0 --port=8080`
 
 The app will be available locally at `http://127.0.0.1:8080`.
 
-### Production
+#### Production
 
 The app will be available globally at `https://yourappname.ondigitalocean.app`.
 
@@ -112,9 +126,3 @@ This script assumes that images are not relevant.
 3. `cd knowledge`
 4. `./optimize_pdfs.sh src _output`
 4. Optimized files will be in `knowledge/_output`
-
-https://platform.openai.com/assistants
-
-## License
-
-This is total freeware at the moment.
