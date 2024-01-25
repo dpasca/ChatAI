@@ -5,24 +5,22 @@
 # Description: Chat AI Flask app
 #==================================================================
 import os
+import sys
 import json
 import time
-from pyexpat.errors import messages
-from flask import Flask, redirect, render_template, request, jsonify, session, url_for
-from dotenv import load_dotenv
-from OpenAIWrapper import OpenAIWrapper
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 import datetime
 from datetime import datetime
-import pytz # For timezone conversion
 import inspect
-from StorageCloud import StorageCloud as Storage
 from io import BytesIO
+
+# Update the path for the modules below
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../Common'))
+from OpenAIWrapper import OpenAIWrapper
+from StorageCloud import StorageCloud as Storage
 from logger import *
 from OAIUtils import *
 import AssistTools
-
-# References:
-# - https://cookbook.openai.com/examples/assistants_api_overview_python
 
 # Load configuration from config.json
 with open('config.json') as f:
