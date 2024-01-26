@@ -1,6 +1,6 @@
 {
     "app_version": "0.0.13",
-    "model_version": "gpt-4-1106-preview",
+    "model_version": "gpt-4-turbo-preview",
     "enable_retrieval": true,
     "assistant_name": "Mei",
     "app_title" : "Chat with Mei",
