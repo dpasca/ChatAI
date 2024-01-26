@@ -4,3 +4,4 @@ python-dotenv
 pytz
 prompt_toolkit
 rich
+rich-pixels

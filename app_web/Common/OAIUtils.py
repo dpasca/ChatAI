@@ -8,11 +8,11 @@
 from logger import *
 import re
 
-def IsImageAnnotation(a):
+def IsImageAnnotation(a) -> bool:
     return a.type == "file_path" and a.text.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
 
 # Replace the file paths with actual URLs
-def ResolveImageAnnotations(out_msg, annotations, make_file_url):
+def ResolveImageAnnotations(out_msg, annotations, make_file_url) -> str:
     new_msg = out_msg
     # Sort annotations by start_index in descending order
     sorted_annotations = sorted(annotations, key=lambda x: x.start_index, reverse=True)
@@ -39,7 +39,7 @@ def ResolveImageAnnotations(out_msg, annotations, make_file_url):
 
     return new_msg
 
-def ResolveCiteAnnotations(out_msg, annotations, wrap):
+def ResolveCiteAnnotations(out_msg, annotations, wrap) -> str:
     citations = []
     for index, a in enumerate(annotations):
 
@@ -72,7 +72,7 @@ def ResolveCiteAnnotations(out_msg, annotations, wrap):
 
 # Deal with the bug where empty annotations are added to the message
 # We go and remove all 【*†*】blocks
-def StripEmptyAnnotationsBug(out_msg):
+def StripEmptyAnnotationsBug(out_msg) -> str:
     # This pattern matches 【*†*】blocks
     pattern = r'【\d+†.*?】'
     # Remove all occurrences of the pattern

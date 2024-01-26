@@ -72,6 +72,24 @@ def makeRichColoredRole(role):
     return f"[{color}]{role}>[/{color}] "
 
 from rich import print as rprint
+from rich_pixels import Pixels
+from PIL import Image
+
+def makeRichImageItems(items: list, url: str) -> None:
+    items.append(Text(url + "\n")) # Always add the URL as text
+    try:
+        # Attempt to open the image, resize it to 28x28 pixels,
+        # . and convert it to rich Pixels
+        HEAD = "file:///"
+        NEW_SIZE = 28
+
+        pathname = url[len(HEAD):] if url.startswith(HEAD) else url
+        image = Image.open(pathname)
+        resized_image = image.resize((NEW_SIZE, NEW_SIZE))
+        pixels = Pixels.from_image(resized_image)
+        items.append(pixels)
+    except:
+        pass
 
 def printChatMsg(msg: dict) -> None:
     items = []
@@ -81,8 +99,10 @@ def printChatMsg(msg: dict) -> None:
             if cont['type'] == "text":
                 txt = cont['value']
                 items.append("\n" if len(txt) == 0 else Markdown(txt))
+            elif cont['type'] == "image_file":
+                makeRichImageItems(items, cont['value'])
             else:
-                items.append(Text(cont['value']))
+                items.append(Text(cont['value'] + "\n"))
     else:
         items.append(Markdown(msg))
     
@@ -236,7 +256,6 @@ def appendLocMessage(message):
     getLocMessages().append(message)
     session.modified = True
 
-
 def messageToLocMessage(message, make_file_url):
     result = {
         "role": message.role,
@@ -321,6 +340,9 @@ def index(do_clear=False):
 
     _judge.ClearMessages()
 
+    printChatMsg(f"Welcome to {config['app_title']}, v{config['app_version']}")
+    printChatMsg(f"Assistant: {config['assistant_name']}")
+
     # Always clear the local messages, because we will repopulate
     #  from the thread history below
     session['loc_messages'] = []
@@ -328,22 +350,22 @@ def index(do_clear=False):
     # Get all the messages from the thread
     history = _oa_wrap.ListThreadMessages(thread_id=thread_id, order="asc")
     logmsg(f"Found {len(history.data)} messages in the thread history")
-    for (i, msg) in enumerate(history.data):
 
+    # History in our format
+    locMessages = []
+    for (i, msg) in enumerate(history.data):
         # Append message to messages list
         logmsg(f"Message {i} ({msg.role}): {msg.content}")
-        appendLocMessage(
+        locMessages.append(
             messageToLocMessage(
                 message=msg,
                 make_file_url=make_file_url))
 
-    printChatMsg(f"Welcome to {config['app_title']}, v{config['app_version']}")
-    printChatMsg(f"Assistant: {config['assistant_name']}")
-
-    if (history := getLocMessages()):
-        for msg in getLocMessages():
-            _judge.AddMessage(msg)
-            printChatMsg(msg)
+    # Process the history messages
+    for msg in locMessages:
+        appendLocMessage(msg)
+        _judge.AddMessage(msg)
+        printChatMsg(msg)
 
         #printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
 
@@ -457,7 +479,7 @@ def handle_required_action(run, thread_id):
 
 
 #==================================================================
-def SendUserMessage(msg_text, assistant_id, thread_id):
+def SendUserMessage(wrap, msg_text, assistant_id, thread_id):
 
     if wait_to_use_thread(thread_id) == False:
         # Give up if there's an issue waiting for the previous run on thread
@@ -467,13 +489,13 @@ def SendUserMessage(msg_text, assistant_id, thread_id):
     msg_with_meta = prepareUserMessageMeta() + msg_text
     logmsg(f"Sending message: {msg_with_meta}")
 
-    msg = _oa_wrap.CreateMessage(thread_id=thread_id, role="user", content=msg_text)
-    run = _oa_wrap.CreateRun(thread_id=thread_id, assistant_id=assistant_id)
+    msg = wrap.CreateMessage(thread_id=thread_id, role="user", content=msg_text)
+    run = wrap.CreateRun(thread_id=thread_id, assistant_id=assistant_id)
 
     last_message_id = msg.id
     last_printed_status = None
     while True:
-        run = _oa_wrap.RetrieveRun(thread_id=thread_id, run_id=run.id)
+        run = wrap.RetrieveRun(thread_id=thread_id, run_id=run.id)
         if run.status != last_printed_status:
             logmsg(f"Run status: {run.status}")
             last_printed_status = run.status
@@ -492,23 +514,20 @@ def SendUserMessage(msg_text, assistant_id, thread_id):
             yield json.dumps({'replies': []}), 500
             break
 
-        # Check for new messages
-        new_messages = _oa_wrap.ListThreadMessages(
-            thread_id=thread_id,
-            order="asc",
-            after=last_message_id
-        )
-
-        if new_messages.data:
-            last_message_id = new_messages.data[-1].id
-            replies = [messageToLocMessage(m, make_file_url) for m in new_messages.data]
-            for locMessage in replies:
-                appendLocMessage(locMessage)
-
-            # Yielding partial replies with a 202 status code
-            yield json.dumps({'replies': [m['content'] for m in replies]}), 202
-
         if run.status == "completed":
+            # Check for new messages
+            new_messages = wrap.ListThreadMessages(
+                thread_id=thread_id,
+                order="asc",
+                after=last_message_id
+            )
+
+            if new_messages.data:
+                last_message_id = new_messages.data[-1].id
+                replies = [messageToLocMessage(m, make_file_url) for m in new_messages.data]
+                # Yielding partial replies with a 202 status code
+                yield json.dumps({'replies': replies}), 202
+
             # Indicate completion with a 200 status code
             yield json.dumps({'replies': []}), 200
             break
@@ -574,22 +593,22 @@ def main():
         #  - Waiting (102, sleep and call again)
         #  - Process complete (200, do not call again)
         #  - Error (500, do not call again)
-        for response, status_code in SendUserMessage(user_input, _assistant.id, thread_id):
+        for response, status_code in SendUserMessage(_oa_wrap, user_input, _assistant.id, thread_id):
 
             if status_code == 200 or status_code == 202:  # Complete or partial reply
                 replies = json.loads(response)['replies']
                 for reply in replies:
+                    appendLocMessage(reply)
                     _judge.AddMessage(reply)
                     printChatMsg(reply)
 
-                # Start the fact-checking
-                printFactCheck(_judge.GenFactCheck(_oa_wrap))
-
-                if status_code == 200: # Process complete
+                if status_code == 200:
+                    # Start the fact-checking
+                    printFactCheck(_judge.GenFactCheck(_oa_wrap))
+                    # Exit the loop
                     break
 
             elif status_code == 102:  # Waiting
-                logmsg("Waiting for response...")
                 sleepForAPI()  # Pause execution here
 
             elif status_code == 500:
