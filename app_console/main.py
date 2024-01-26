@@ -27,7 +27,7 @@ from OAIUtils import *
 import AssistTools
 
 import locale
-# Set the locale to the user's default setting
+# Set the locale to the user's default setting/debug
 locale.setlocale(locale.LC_ALL, '')
 
 USER_BUCKET_PATH = "user_a_00001"
@@ -36,40 +36,62 @@ ENABLE_SLEEP_LOGGING = False
 
 ENABLE_WEBSEARCH = True
 
+from SessionDict import SessionDict
+
+session = SessionDict(f'_storage/{USER_BUCKET_PATH}/session.json')
+logmsg(f"Session: {session}")
+
 #==================================================================
 from prompt_toolkit import prompt, print_formatted_text
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.completion import WordCompleter
 
-def makeColoredRole(role: str) -> list:
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.style import Style
+from rich.text import Text
+
+console = Console(soft_wrap=True)
+
+def makePromptColoredRole(role: str) -> list:
     role_colors = {
         "assistant": 'ansigreen',
         "user": 'ansiyellow',
         "other": 'ansiblue'
     }
     color = role_colors.get(role, 'ansiblue')
-    return [(color, f"{role}>")]
+    return [(color, f"{role}> ")]
 
-from SessionDict import SessionDict
+def makeRichColoredRole(role):
+    role_colors = {
+        "assistant": 'green',
+        "user": 'yellow',
+        "other": 'blue'
+    }
+    color = role_colors.get(role, 'blue')
+    return f"[{color}]{role}>[/{color}] "
 
-session = SessionDict(f'_storage/{USER_BUCKET_PATH}/session.json')
-logmsg(f"Session: {session}")
+from rich import print as rprint
 
 def printChatMsg(msg: dict) -> None:
+    items = []
     if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
         for cont in msg['content']:
-            tokens = makeColoredRole(msg['role'])
-            content_type = f" ({cont['type']})" if cont['type'] != "text" else ""
-            tokens.append(('default', f"{content_type} {cont['value']}"))
-            print_formatted_text(FormattedText(tokens))
+            items.append(makeRichColoredRole(msg['role']))
+            if cont['type'] == "text":
+                txt = cont['value']
+                items.append("\n" if len(txt) == 0 else Markdown(txt))
+            else:
+                items.append(Text(cont['value']))
     else:
-        print(msg)
+        items.append(Markdown(msg))
+    
+    for item in items:
+        console.print(item, end='')
 
-
-def inputChatMsg(prompt_text: list, history=None, auto_suggest=None, completer=None) -> str:
-    prompt_text.append(('default', ' '))
-    formatted_prompt = FormattedText(prompt_text)
-    return prompt(formatted_prompt, history=history, auto_suggest=auto_suggest, completer=completer)
+def inputChatMsg(role: str, history=None, auto_suggest=None, completer=None) -> str:
+    colored = makePromptColoredRole(role)
+    return prompt(colored, history=history, auto_suggest=auto_suggest, completer=completer)
 
 #==================================================================
 # Load configuration from config.json
@@ -319,7 +341,6 @@ def index(do_clear=False):
     printChatMsg(f"Assistant: {config['assistant_name']}")
 
     if (history := getLocMessages()):
-        printChatMsg("History:")
         for msg in getLocMessages():
             _judge.AddMessage(msg)
             printChatMsg(msg)
@@ -521,25 +542,22 @@ def send_message(msg_text):
         return json.dumps({'replies': []}), 200
 
 #==================================================================
-def createFormattedText(text: str, style: str = 'default') -> tuple:
-    return (style, text)
-
 def printFactCheck(fcRepliesStr: str) -> None:
     try:
         fcReplies = json.loads(fcRepliesStr)
         if len(fcReplies['fact_check']) == 0:
             return
 
-        formatted_output = []
+        outStr = ""
         for reply in fcReplies['fact_check']:
             rebuttal = reply.get('rebuttal') or ''
             links = reply.get('links') or []
             if rebuttal or links:
-                formatted_output.append(createFormattedText(f"\n{rebuttal}\n", 'ansidarkgray'))
+                outStr += f"> {rebuttal}\n"
                 for link in links:
-                    formatted_output.append(createFormattedText(f"- {link}\n", 'ansidarkgray'))
+                    outStr += f"> - [{link}]({link})"
 
-        print_formatted_text(FormattedText(formatted_output))
+        console.print(Markdown(outStr))
     except json.JSONDecodeError:
         logerr("Error decoding JSON response")
 
@@ -559,11 +577,11 @@ def main():
 
     index(args.clear)
 
-    completer = WordCompleter(["/clear", "/exit"])
+    completer = None #WordCompleter(["/clear", "/exit"])
 
     while True:
         # Get user input
-        user_input = inputChatMsg(makeColoredRole("user"), completer=completer)
+        user_input = inputChatMsg("user", completer=completer)
 
         if user_input == "/clear":
             # Clear the local messages and invalidate the thread ID

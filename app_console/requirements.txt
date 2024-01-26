@@ -3,3 +3,4 @@ duckduckgo_search
 python-dotenv
 pytz
 prompt_toolkit
+rich
