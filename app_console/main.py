@@ -36,45 +36,40 @@ ENABLE_SLEEP_LOGGING = False
 
 ENABLE_WEBSEARCH = True
 
-COL_BLUE = '\033[94m'
-COL_YELLOW = '\033[93m'
-COL_GREEN = '\033[92m'
-COL_ENDC = '\033[0m'
-COL_GRAY = '\033[90m'
-COL_DRKGRAY = '\033[1;30m'
-COL_ENDC = '\033[0m'
-
 #==================================================================
-def makeColoredRole(role):
-    coloredRole = ''
-    if role == "assistant":
-        coloredRole = COL_GREEN
-    elif role == "user":
-        coloredRole = COL_YELLOW
-    else:
-        coloredRole = COL_BLUE
-    coloredRole += role + ">" + COL_ENDC
-    return coloredRole
+from prompt_toolkit import prompt, print_formatted_text
+from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.completion import WordCompleter
+
+def makeColoredRole(role: str) -> list:
+    role_colors = {
+        "assistant": 'ansigreen',
+        "user": 'ansiyellow',
+        "other": 'ansiblue'
+    }
+    color = role_colors.get(role, 'ansiblue')
+    return [(color, f"{role}>")]
 
 from SessionDict import SessionDict
 
 session = SessionDict(f'_storage/{USER_BUCKET_PATH}/session.json')
 logmsg(f"Session: {session}")
 
-#==================================================================
-def printChatMsg(msg):
-    # Check if msg is a dict with 'role' and 'content' keys
+def printChatMsg(msg: dict) -> None:
     if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
         for cont in msg['content']:
-            str = makeColoredRole(msg['role'])
-            str += f" ({cont['type']})" if cont['type'] != "text" else ""
-            str += f" {cont['value']}"
-            print(str)
+            tokens = makeColoredRole(msg['role'])
+            content_type = f" ({cont['type']})" if cont['type'] != "text" else ""
+            tokens.append(('default', f"{content_type} {cont['value']}"))
+            print_formatted_text(FormattedText(tokens))
     else:
         print(msg)
 
-def inputChatMsg(prompt):
-    return input(prompt)
+
+def inputChatMsg(prompt_text: list, history=None, auto_suggest=None, completer=None) -> str:
+    prompt_text.append(('default', ' '))
+    formatted_prompt = FormattedText(prompt_text)
+    return prompt(formatted_prompt, history=history, auto_suggest=auto_suggest, completer=completer)
 
 #==================================================================
 # Load configuration from config.json
@@ -298,14 +293,6 @@ def make_file_url(file_id, simple_name):
     return _storage.GetFileURL(file_path)
 
 #==================================================================
-def printSummaryAndCritique():
-    printChatMsg(f"\n{COL_DRKGRAY}** Summary:")
-    printChatMsg(_judge.GenSummary(_oa_wrap))
-    printChatMsg(f"\n{COL_DRKGRAY}** Critique:")
-    printChatMsg(_judge.GenCritique(_oa_wrap))
-    printChatMsg(COL_ENDC)
-
-#==================================================================
 def index(do_clear=False):
     # Load or create the thread
     thread_id = createThread(force_new=do_clear)
@@ -337,7 +324,7 @@ def index(do_clear=False):
             _judge.AddMessage(msg)
             printChatMsg(msg)
 
-        #printFactCheck(json.loads(_judge.GenFactCheck(_oa_wrap))) # For debug
+        #printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
 
 #==================================================================
 def submit_message(assistant_id, thread_id, msg_text):
@@ -534,26 +521,27 @@ def send_message(msg_text):
         return json.dumps({'replies': []}), 200
 
 #==================================================================
-def printFactCheck(fcReplies):
-    #print(fcReplies)
-    #return
-    if len(fcReplies['fact_check']) == 0:
-        return
+def createFormattedText(text: str, style: str = 'default') -> tuple:
+    return (style, text)
 
-    for reply in fcReplies['fact_check']:
-        #role = reply['role']
-        rebuttal = reply.get('rebuttal') or ''
-        links = reply.get('links') or []
-        if rebuttal == '' and len(links) == 0:
-            continue
+def printFactCheck(fcRepliesStr: str) -> None:
+    try:
+        fcReplies = json.loads(fcRepliesStr)
+        if len(fcReplies['fact_check']) == 0:
+            return
 
-        outStr = f"\n{COL_DRKGRAY} NOTICE: {rebuttal}"
-        if len(links) > 0:
-            outStr += "\n"
-            for link in links:
-                outStr += f"- <{link}>\n"
+        formatted_output = []
+        for reply in fcReplies['fact_check']:
+            rebuttal = reply.get('rebuttal') or ''
+            links = reply.get('links') or []
+            if rebuttal or links:
+                formatted_output.append(createFormattedText(f"\n{rebuttal}\n", 'ansidarkgray'))
+                for link in links:
+                    formatted_output.append(createFormattedText(f"- {link}\n", 'ansidarkgray'))
 
-        printChatMsg(outStr)
+        print_formatted_text(FormattedText(formatted_output))
+    except json.JSONDecodeError:
+        logerr("Error decoding JSON response")
 
 #==================================================================
 # Main loop for console app
@@ -571,9 +559,11 @@ def main():
 
     index(args.clear)
 
+    completer = WordCompleter(["/clear", "/exit"])
+
     while True:
         # Get user input
-        user_input = inputChatMsg(makeColoredRole("user") + " ")
+        user_input = inputChatMsg(makeColoredRole("user"), completer=completer)
 
         if user_input == "/clear":
             # Clear the local messages and invalidate the thread ID
@@ -595,7 +585,7 @@ def main():
             _judge.AddMessage(reply)
             printChatMsg(reply)
 
-        printFactCheck(json.loads(_judge.GenFactCheck(_oa_wrap)))
+        printFactCheck(_judge.GenFactCheck(_oa_wrap))
 
 if __name__ == "__main__":
     main()
