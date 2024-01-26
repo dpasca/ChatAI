@@ -348,16 +348,6 @@ def index(do_clear=False):
         #printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
 
 #==================================================================
-def submit_message(assistant_id, thread_id, msg_text):
-    msg = _oa_wrap.CreateMessage(
-        thread_id=thread_id, role="user", content=msg_text
-    )
-    run = _oa_wrap.CreateRun(
-        thread_id=thread_id,
-        assistant_id=assistant_id,
-    )
-    return msg, run
-
 # Possible run statuses:
 #  in_progress, requires_action, cancelling, cancelled, failed, completed, or expired
 
@@ -465,33 +455,22 @@ def handle_required_action(run, thread_id):
     )
     logmsg(f"Run status: {run.status}")
 
-#==================================================================
-def timing_decorator(func):
-    def wrapper(*args, **kwargs):
-        start = datetime.now()
-        result = func(*args, **kwargs)
-        end = datetime.now()
-        logmsg(f"Function {func.__name__} took {end - start} to complete")
-        return result
-    return wrapper
 
 #==================================================================
-@timing_decorator
-def send_message(msg_text):
+def SendUserMessage(msg_text, assistant_id, thread_id):
 
-    thread_id = session['thread_id']
-
-    # Wait or fail if the thread is stuck
     if wait_to_use_thread(thread_id) == False:
-        return json.dumps({'replies': []}), 500
+        # Give up if there's an issue waiting for the previous run on thread
+        yield json.dumps({'replies': []}), 500
+        return
 
     msg_with_meta = prepareUserMessageMeta() + msg_text
-
-    # Add the new message to the thread
     logmsg(f"Sending message: {msg_with_meta}")
-    msg, run = submit_message(_assistant.id, thread_id, msg_with_meta)
 
-    # Wait for the run to complete
+    msg = _oa_wrap.CreateMessage(thread_id=thread_id, role="user", content=msg_text)
+    run = _oa_wrap.CreateRun(thread_id=thread_id, assistant_id=assistant_id)
+
+    last_message_id = msg.id
     last_printed_status = None
     while True:
         run = _oa_wrap.RetrieveRun(thread_id=thread_id, run_id=run.id)
@@ -499,47 +478,40 @@ def send_message(msg_text):
             logmsg(f"Run status: {run.status}")
             last_printed_status = run.status
 
-        if run.status == "queued" or run.status == "in_progress":
-            sleepForAPI()
-            continue
+        if run.status in ["queued", "in_progress"]:
+            # Yielding partial replies with a 102 status code (caller should sleep some)
+            yield json.dumps({'status': 'waiting'}), 102
 
-        # Handle possible request for action (function calling)
         if run.status == "requires_action":
+            # Handle the function-calling
             handle_required_action(run, thread_id)
 
-        # See if any error occurred so far
-        if run.status is ["expired", "cancelling", "cancelled", "failed"]:
+        if run.status in ["expired", "cancelling", "cancelled", "failed"]:
             logerr("Run failed")
-            return json.dumps({'replies': []}), 500
-
-        # All good
-        if run.status == "completed":
+            # Indicate failure with a 500 status code
+            yield json.dumps({'replies': []}), 500
             break
 
-    # Retrieve all the messages added after our last user message
-    new_messages = _oa_wrap.ListThreadMessages(
-        thread_id=thread_id,
-        order="asc",
-        after=msg.id
-    )
-    logmsg(f"Received {len(new_messages.data)} new messages")
+        # Check for new messages
+        new_messages = _oa_wrap.ListThreadMessages(
+            thread_id=thread_id,
+            order="asc",
+            after=last_message_id
+        )
 
-    replies = []
-    for msg in new_messages.data:
-        # Append message to messages list
-        locMessage = messageToLocMessage(msg, make_file_url)
-        appendLocMessage(locMessage)
-        # We only want the content of the message
-        replies.append(locMessage)
+        if new_messages.data:
+            last_message_id = new_messages.data[-1].id
+            replies = [messageToLocMessage(m, make_file_url) for m in new_messages.data]
+            for locMessage in replies:
+                appendLocMessage(locMessage)
 
-    logmsg(f"Replies: {replies}")
+            # Yielding partial replies with a 202 status code
+            yield json.dumps({'replies': [m['content'] for m in replies]}), 202
 
-    if len(replies) > 0:
-        logmsg(f"Sending {len(replies)} replies")
-        return json.dumps({'replies': replies}), 200
-    else:
-        logmsg("Sending no replies")
-        return json.dumps({'replies': []}), 200
+        if run.status == "completed":
+            # Indicate completion with a 200 status code
+            yield json.dumps({'replies': []}), 200
+            break
 
 #==================================================================
 def printFactCheck(fcRepliesStr: str) -> None:
@@ -595,15 +567,34 @@ def main():
         if user_input.lower() == '/exit':
             break
 
-        # Send the message to the assistant and get the replies
-        replies = json.loads(send_message(user_input)[0])
+        thread_id = session['thread_id']
 
-        # Simulate a response (replace with actual response handling)
-        for reply in replies['replies']:
-            _judge.AddMessage(reply)
-            printChatMsg(reply)
+        # Handles the following cases:
+        #  - Partial reply (202, continue to call)
+        #  - Waiting (102, sleep and call again)
+        #  - Process complete (200, do not call again)
+        #  - Error (500, do not call again)
+        for response, status_code in SendUserMessage(user_input, _assistant.id, thread_id):
 
-        printFactCheck(_judge.GenFactCheck(_oa_wrap))
+            if status_code == 200 or status_code == 202:  # Complete or partial reply
+                replies = json.loads(response)['replies']
+                for reply in replies:
+                    _judge.AddMessage(reply)
+                    printChatMsg(reply)
+
+                # Start the fact-checking
+                printFactCheck(_judge.GenFactCheck(_oa_wrap))
+
+                if status_code == 200: # Process complete
+                    break
+
+            elif status_code == 102:  # Waiting
+                logmsg("Waiting for response...")
+                sleepForAPI()  # Pause execution here
+
+            elif status_code == 500:
+                logerr("Error or no new messages")
+
 
 if __name__ == "__main__":
     main()
