@@ -97,6 +97,7 @@ def printChatMsg(msg: dict) -> None:
     items = []
     if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
         for cont in msg['content']:
+            #items.append(" | " + msg['role'] + " | " + cont['type'] + ": ")
             items.append(makeRichColoredRole(msg['role']))
             if cont['type'] == "text":
                 txt = cont['value']
@@ -105,9 +106,14 @@ def printChatMsg(msg: dict) -> None:
                     items.append("\n")
                 else:
                     # When using hard-wrap, we need to start from col 0
-                    if USE_SOFT_WRAP == False and msg['role'] != "user":
+                    use_md = msg['role'] == "assistant"
+                    if USE_SOFT_WRAP == False and use_md:
                         items.append("\n")
-                    items.append(Markdown(txt))
+
+                    if use_md:
+                        items.append(Markdown(txt))
+                    else:
+                        items.append(Text(txt + "\n"))
 
             elif cont['type'] == "image_file":
                 makeRichImageItems(items, cont['value'])
