@@ -51,7 +51,9 @@ from rich.markdown import Markdown
 from rich.style import Style
 from rich.text import Text
 
-console = Console(soft_wrap=True)
+USE_SOFT_WRAP = False
+
+console = Console(soft_wrap=USE_SOFT_WRAP)
 
 def makePromptColoredRole(role: str) -> list:
     role_colors = {
@@ -98,7 +100,15 @@ def printChatMsg(msg: dict) -> None:
             items.append(makeRichColoredRole(msg['role']))
             if cont['type'] == "text":
                 txt = cont['value']
-                items.append("\n" if len(txt) == 0 else Markdown(txt))
+                if len(txt) == 0:
+                    # Add a newline if the text is empty
+                    items.append("\n")
+                else:
+                    # When using hard-wrap, we need to start from col 0
+                    if USE_SOFT_WRAP == False:
+                        items.append("\n")
+                    items.append(Markdown(txt))
+
             elif cont['type'] == "image_file":
                 makeRichImageItems(items, cont['value'])
             else:
