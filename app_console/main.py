@@ -105,7 +105,7 @@ def printChatMsg(msg: dict) -> None:
                     items.append("\n")
                 else:
                     # When using hard-wrap, we need to start from col 0
-                    if USE_SOFT_WRAP == False:
+                    if USE_SOFT_WRAP == False and msg['role'] != "user":
                         items.append("\n")
                     items.append(Markdown(txt))
 
@@ -115,7 +115,7 @@ def printChatMsg(msg: dict) -> None:
                 items.append(Text(cont['value'] + "\n"))
     else:
         items.append(Markdown(msg))
-    
+
     for item in items:
         console.print(item, end='')
 
@@ -132,19 +132,6 @@ with open('config.json') as f:
 with open(config['assistant_instructions'], 'r') as f:
     assistant_instructions = f.read()
 
-META_TAG = "message_meta"
-
-# Special instructions independent of the basic "role" instructions
-MESSAGEMETA_INSTUCT = f"""
-The user messages usually begins with metadata in a format like this:
-<{META_TAG}>
-unix_time: 1620000000
-</{META_TAG}>
-The user does not write this. It's injected by the chat app for the assistant to use.
-Do not make any mention of this metadata. Simply use it organically when needed (e.g.
-when asked about the time, use the unix_time value but do not mention it explicitly).
-"""
-
 FORMAT_INSTRUCT = r"""
 When asked about equations or mathematical formulas you should use LaTeX formatting.
 For each piece of mathematical content:
@@ -156,6 +143,8 @@ For each piece of mathematical content:
 _oa_wrap = OpenAIWrapper(api_key=os.environ.get("OPENAI_API_KEY"))
 
 #===============================================================================
+import ChatAICore
+
 def sleepForAPI():
     if ENABLE_LOGGING and ENABLE_SLEEP_LOGGING:
         caller = inspect.currentframe().f_back.f_code.co_name
@@ -163,31 +152,7 @@ def sleepForAPI():
         print(f"[{caller}:{line}] sleeping...")
     time.sleep(0.5)
 
-#==================================================================
-def prepareUserMessageMeta():
-    return f"<{META_TAG}>\nunix_time: {int(time.time())}\n</{META_TAG}>\n"
-
-def stripUserMessageMeta(msg_with_meta):
-    msg = msg_with_meta
-    begin_tag = f"<{META_TAG}>"
-    end_tag = f"</{META_TAG}>"
-    end_tag_len = len(end_tag)
-
-    while True:
-        start = msg.find(begin_tag)
-        if start == -1:
-            break
-        end = msg.find(end_tag, start)
-        if end == -1:
-            break
-
-        # Check if the character following the end tag is a newline
-        if msg[end + end_tag_len:end + end_tag_len + 1] == "\n":
-            msg = msg[:start] + msg[end + end_tag_len + 1:]
-        else:
-            msg = msg[:start] + msg[end + end_tag_len:]
-
-    return msg
+ChatAICore.SetSleepForAPI(sleepForAPI)
 
 #==================================================================
 _judge = ConvoJudge(
@@ -224,7 +189,7 @@ def createAssistant():
     logmsg(f"Tools: {tools}")
 
     full_instructions = (assistant_instructions
-        + "\n" + MESSAGEMETA_INSTUCT
+        + "\n" + ChatAICore.MESSAGEMETA_INSTUCT
         + "\n" + FORMAT_INSTRUCT)
 
     codename = config["assistant_codename"]
@@ -265,53 +230,6 @@ def getLocMessages():
 def appendLocMessage(message):
     getLocMessages().append(message)
     session.modified = True
-
-def messageToLocMessage(message, make_file_url):
-    result = {
-        "role": message.role,
-        "content": []
-    }
-    for content in message.content:
-        if content.type == "text":
-
-            # Strip the message meta if it's a user message
-            out_msg = content.text.value
-            if message.role == "user":
-                out_msg = stripUserMessageMeta(out_msg)
-
-            # Apply whatever annotations may be there
-            if content.text.annotations is not None:
-
-                logmsg(f"Annotations: {content.text.annotations}")
-
-                out_msg = ResolveImageAnnotations(
-                    out_msg=out_msg,
-                    annotations=content.text.annotations,
-                    make_file_url=make_file_url)
-
-                out_msg = ResolveCiteAnnotations(
-                    out_msg=out_msg,
-                    annotations=content.text.annotations,
-                    wrap=_oa_wrap)
-
-                out_msg = StripEmptyAnnotationsBug(out_msg)
-
-            result["content"].append({
-                "value": out_msg,
-                "type": content.type
-            })
-        elif content.type == "image_file":
-            # Append the content with the image URL
-            result["content"].append({
-                "value": make_file_url(content.image_file.file_id, "image.png"),
-                "type": content.type
-            })
-        else:
-            result["content"].append({
-                "value": "<Unknown content type>",
-                "type": "text"
-            })
-    return result
 
 #==================================================================
 logmsg("Creating storage...")
@@ -367,7 +285,8 @@ def index(do_clear=False):
         # Append message to messages list
         logmsg(f"Message {i} ({msg.role}): {msg.content}")
         locMessages.append(
-            messageToLocMessage(
+            ChatAICore.MessageToLocMessage(
+                wrap=_oa_wrap,
                 message=msg,
                 make_file_url=make_file_url))
 
@@ -377,170 +296,7 @@ def index(do_clear=False):
         _judge.AddMessage(msg)
         printChatMsg(msg)
 
-        #printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
-
-#==================================================================
-# Possible run statuses:
-#  in_progress, requires_action, cancelling, cancelled, failed, completed, or expired
-
-#==================================================================
-def get_thread_status(thread_id):
-    data = _oa_wrap.ListRuns(thread_id=thread_id, limit=1).data
-    if data is None or len(data) == 0:
-        return None, None
-    return data[0].status, data[0].id
-
-#==================================================================
-def cancel_thread(run_id, thread_id):
-    while True:
-        run = _oa_wrap.RetrieveRun(run_id=run_id, thread_id=thread_id)
-        logmsg(f"Run status: {run.status}")
-
-        if run.status in ["completed", "cancelled", "failed", "expired"]:
-            break
-
-        if run.status in ["queued", "in_progress", "requires_action"]:
-            logmsg("Cancelling thread...")
-            run = _oa_wrap.CancelRun(run_id=run_id, thread_id=thread_id)
-            sleepForAPI()
-            continue
-
-        if run.status == "cancelling":
-            sleepForAPI()
-            continue
-
-#==================================================================
-def wait_to_use_thread(thread_id):
-    for i in range(5):
-        status, run_id = get_thread_status(thread_id)
-        if status is None:
-            return True
-        logmsg(f"Thread status from last run: {status}")
-
-        # If it's expired, then we just can't use it anymore
-        if status == "expired":
-            logerr("Thread expired, cannot use it anymore")
-            return False
-
-        # Acceptable statuses to continue
-        if status in ["completed", "failed", "cancelled"]:
-            logmsg("Thread is available")
-            return True
-
-        # Waitable states
-        if status in ["queued", "in_progress", "cancelling"]:
-            logmsg("Waiting for thread to become available...")
-
-        logmsg("Status in required action: " + str(status == "requires_action"))
-
-        # States that we cannot handle at this point
-        if status in ["requires_action"]:
-            logerr("Thread requires action, but we don't know what to do. Cancelling...")
-            cancel_thread(run_id=run_id, thread_id=thread_id)
-            continue
-
-        sleepForAPI()
-
-    return False
-
-#==================================================================
-# Handle the required action (function calling)
-def handle_required_action(run, thread_id):
-    if run.required_action is None:
-        logerr("run.required_action is None")
-        return
-
-    # Resolve the required actions and collect the results in tool_outputs
-    tool_outputs = []
-    for tool_call in run.required_action.submit_tool_outputs.tool_calls:
-        name = tool_call.function.name
-
-        try:
-            arguments = json.loads(tool_call.function.arguments)
-        except:
-            logerr(f"Failed to parse arguments. function: {name}, arguments: {tool_call.function.arguments}")
-            continue
-
-        logmsg(f"Function Name: {name}")
-        logmsg(f"Arguments: {arguments}")
-
-        # Look up the function in the dictionary and call it
-        if name in AssistTools.ToolActions:
-            responses = AssistTools.ToolActions[name](arguments)
-        else:
-            responses = AssistTools.fallback_tool_function(name, arguments)
-
-        if responses is not None:
-            tool_outputs.append(
-                {
-                    "tool_call_id": tool_call.id,
-                    "output": json.dumps(responses),
-                }
-            )
-
-    # Submit the tool outputs
-    logmsg(f"Tool outputs: {tool_outputs}")
-    run = _oa_wrap.SubmitToolsOutputs(
-        thread_id=thread_id,
-        run_id=run.id,
-        tool_outputs=tool_outputs,
-    )
-    logmsg(f"Run status: {run.status}")
-
-
-#==================================================================
-def SendUserMessage(wrap, msg_text, assistant_id, thread_id):
-
-    if wait_to_use_thread(thread_id) == False:
-        # Give up if there's an issue waiting for the previous run on thread
-        yield json.dumps({'replies': []}), 500
-        return
-
-    msg_with_meta = prepareUserMessageMeta() + msg_text
-    logmsg(f"Sending message: {msg_with_meta}")
-
-    msg = wrap.CreateMessage(thread_id=thread_id, role="user", content=msg_text)
-    run = wrap.CreateRun(thread_id=thread_id, assistant_id=assistant_id)
-
-    last_message_id = msg.id
-    last_printed_status = None
-    while True:
-        run = wrap.RetrieveRun(thread_id=thread_id, run_id=run.id)
-        if run.status != last_printed_status:
-            logmsg(f"Run status: {run.status}")
-            last_printed_status = run.status
-
-        if run.status in ["queued", "in_progress"]:
-            # Yielding partial replies with a 102 status code (caller should sleep some)
-            yield json.dumps({'status': 'waiting'}), 102
-
-        if run.status == "requires_action":
-            # Handle the function-calling
-            handle_required_action(run, thread_id)
-
-        if run.status in ["expired", "cancelling", "cancelled", "failed"]:
-            logerr("Run failed")
-            # Indicate failure with a 500 status code
-            yield json.dumps({'replies': []}), 500
-            break
-
-        if run.status == "completed":
-            # Check for new messages
-            new_messages = wrap.ListThreadMessages(
-                thread_id=thread_id,
-                order="asc",
-                after=last_message_id
-            )
-
-            if new_messages.data:
-                last_message_id = new_messages.data[-1].id
-                replies = [messageToLocMessage(m, make_file_url) for m in new_messages.data]
-                # Yielding partial replies with a 202 status code
-                yield json.dumps({'replies': replies}), 202
-
-            # Indicate completion with a 200 status code
-            yield json.dumps({'replies': []}), 200
-            break
+    printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
 
 #==================================================================
 def printFactCheck(fcRepliesStr: str) -> None:
@@ -556,11 +312,13 @@ def printFactCheck(fcRepliesStr: str) -> None:
             if rebuttal or links:
                 outStr += f"> {rebuttal}\n"
                 for link in links:
-                    outStr += f"> - [{link}]({link})"
+                    readableLink = link if not link.startswith("https://") else link[len("https://"):]
+                    outStr += f"> - [{readableLink}]({link})\n"
 
         console.print(Markdown(outStr))
     except json.JSONDecodeError:
         logerr("Error decoding JSON response")
+        console.print(Markdown("> " + fcRepliesStr))
 
 #==================================================================
 # Main loop for console app
@@ -603,7 +361,8 @@ def main():
         #  - Waiting (102, sleep and call again)
         #  - Process complete (200, do not call again)
         #  - Error (500, do not call again)
-        for response, status_code in SendUserMessage(_oa_wrap, user_input, _assistant.id, thread_id):
+        for response, status_code in ChatAICore.SendUserMessage(
+            _oa_wrap, user_input, _assistant.id, thread_id, make_file_url):
 
             if status_code == 200 or status_code == 202:  # Complete or partial reply
                 replies = json.loads(response)['replies']
@@ -617,9 +376,6 @@ def main():
                     printFactCheck(_judge.GenFactCheck(_oa_wrap))
                     # Exit the loop
                     break
-
-            elif status_code == 102:  # Waiting
-                sleepForAPI()  # Pause execution here
 
             elif status_code == 500:
                 logerr("Error or no new messages")
