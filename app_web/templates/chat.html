@@ -102,8 +102,6 @@
     <script src="static/script.js"></script>
 
     <script>
-      var messages = {{ messages|tojson|safe }};
-
       // Add the messages to the chatbox
       window.onload = function () {
         // Send the user's time zone and user agent to the server
@@ -118,22 +116,19 @@
             timezone: timeZone,
             user_agent: userAgent
           })
-        });
-
-        //console.log("Window loaded");
-        var chatbox = document.getElementById('chatbox');
-        for (var i = 0; i < messages.length; i++) {
-          appendMessage(messages[i], "{{ assistant_name }}");
         }
+        );
 
-        // Enable the erase button
-        if (messages.length > 0) {
-          document.getElementById('erase-button').style.display = 'block';
-        }
-
-        // Scroll to the bottom of the chatbox
-        var chatbox = document.getElementById('chatbox');
-        chatbox.scrollTop = chatbox.scrollHeight;
+        //console.log("Loading chat history...");
+        fetch('/get_history')
+          .then(response => response.json())
+          .then(data => {
+            messages = data.messages;
+            var chatbox = document.getElementById('chatbox');
+            for (var i = 0; i < messages.length; i++) {
+              appendMessage(messages[i], "{{ assistant_name }}");
+            }
+          });
 
         // Focus on the input field
         document.getElementById('user-input').focus();

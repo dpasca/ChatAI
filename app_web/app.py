@@ -20,7 +20,6 @@ from OpenAIWrapper import OpenAIWrapper
 from StorageCloud import StorageCloud as Storage
 from logger import *
 from OAIUtils import *
-import AssistTools
 
 USER_BUCKET_PATH = "user_a_00001"
 ENABLE_SLEEP_LOGGING = False
@@ -204,16 +203,12 @@ def index():
 
     # Process the history messages
     print(f"Total history messages: {len(getLocMessages())}")
-    for msg in getLocMessages():
-        #_judge.AddMessage(msg)
-        pass
 
     return render_template(
                 'chat.html',
                 app_title=config["app_title"],
                 assistant_name=config["assistant_name"],
                 assistant_avatar=config["assistant_avatar"],
-                messages=getLocMessages(),
                 app_version=config["app_version"])
 
 #===============================================================================
@@ -225,6 +220,11 @@ def timing_decorator(func):
         logmsg(f"Function {func.__name__} took {end - start} to complete")
         return result
     return wrapper
+
+#===============================================================================
+@app.route('/get_history', methods=['GET'])
+def get_history():
+    return jsonify({'messages': getLocMessages()})
 
 #===============================================================================
 @app.route('/send_message', methods=['POST'])
