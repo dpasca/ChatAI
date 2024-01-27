@@ -15,11 +15,11 @@ import inspect
 from io import BytesIO
 
 # Update the path for the modules below
-from .Common.OpenAIWrapper import OpenAIWrapper
-from .Common.StorageCloud import StorageCloud as Storage
-from .Common.logger import *
-from .Common.OAIUtils import *
-from .Common import ChatAICore
+from Common.OpenAIWrapper import OpenAIWrapper
+from Common.StorageCloud import StorageCloud as Storage
+from Common.logger import *
+from Common.OAIUtils import *
+from Common import ChatAICore
 
 USER_BUCKET_PATH = "user_a_00001"
 ENABLE_SLEEP_LOGGING = False
