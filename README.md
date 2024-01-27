@@ -100,7 +100,7 @@ This is an example for DigitalOcean. Change the steps as needed if you'll be usi
 
 #### Local development
 
-`cd app && flask --debug run --host=0.0.0.0 --port=8080`
+`(cd app_web && flask --debug run --host=0.0.0.0 --port=8080)`
 
 The app will be available locally at `http://127.0.0.1:8080`.
 
