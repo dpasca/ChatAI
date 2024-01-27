@@ -12,12 +12,16 @@ class ConvoJudge:
         self.srcMessages = []
         self.model = model
         self.temperature = temperature
-        self.instructionsForSummary = """
-You will receive a conversation between User and Assistant in the format:
+
+        CONVO_DESC = """
+You will receive a conversation between User and Assistant (a thid party assistant, not you!)
+in the format:
 - SUMMARY (optional): [Summary of the conversation so far]
 - Message: <index> by <role>:\n<content>
 - Message: ...
+"""
 
+        self.instructionsForSummary = CONVO_DESC + """
 Output a synthesized summary of the conversation in less than 100 words.
 Do not prefix with "Summary:" or anything like that, it's implied. 
 Output must be optimized for a LLM, human-readability is not important.
@@ -27,12 +31,7 @@ Rules for output:
 2. If large data blocks, condense to essential information only.
 """
 
-        self.instructionsForCritique = """
-You will receive a conversation between User and Assistant in the format:
-- SUMMARY (optional): [Summary of the conversation so far]
-- Message: <index> by <role>:\n<content>
-- Message: ...
-
+        self.instructionsForCritique = CONVO_DESC + """
 Assistant is a mind-reading AI based on an LLM. Its goal is to provide total delegation
 of the tasks required towards the user's goal.
 
@@ -47,14 +46,10 @@ Reply in the following format:
 }
 """
 
-        self.instructionsForFactCheck = """
-You will receive a conversation between User and Assistant in the format:
-- SUMMARY (optional): [Summary of the conversation so far]
-- Message: <index> by <role>:\n<content>
-- Message: ...
-
-Perform a fact-check for the last message in the conversation and
-output your findings in a fact-check list with the following format:
+        self.instructionsForFactCheck = CONVO_DESC + """
+You MUST reply in JSON format, no exceptions.
+Perform a fact-check for the last message in the conversation and reply a fact-check list with the following format:
+---
 {
   "fact_check": [
     {
@@ -67,9 +62,11 @@ output your findings in a fact-check list with the following format:
     }
   ]
 }
-Do not produce "rebuttal" or "links" if "applicable" is false.
-Beware of the fact that the assisant may have tools that you may not be
-aware of, such as access to the Internet and user's details.
+---
+NOTES:
+- Do not produce "rebuttal" or "links" if "applicable" is false.
+- Beware of the fact that the assisant may have tools that you may not be
+  aware of, such as access to the Internet and user's details.
 """
 
     def AddMessage(self, srcMsg):
