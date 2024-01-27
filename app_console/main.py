@@ -276,34 +276,41 @@ def index(do_clear=False):
     printChatMsg(f"Welcome to {config['app_title']}, v{config['app_version']}")
     printChatMsg(f"Assistant: {config['assistant_name']}")
 
-    # Always clear the local messages, because we will repopulate
-    #  from the thread history below
-    session['loc_messages'] = []
+    # See if we have an existing list in the session, if so, get the last message ID
+    if not 'loc_messages' in session:
+        session['loc_messages'] = []
+
+    after = ''
+    try:
+        if len(session['loc_messages']) > 0:
+            after = session['loc_messages'][-1]['src_id']
+    except:
+        logerr("Error getting last message ID")
+        pass
 
     # Get all the messages from the thread
-    history = _oa_wrap.ListAllThreadMessages(thread_id=thread_id)
-    logmsg(f"Found {len(history)} messages in the thread history")
+    history = _oa_wrap.ListAllThreadMessages(thread_id=thread_id, after=after)
+    print(f"Found {len(history)} new messages in the thread history")
 
     # History in our format
-    locMessages = []
     for (i, msg) in enumerate(history):
         # Append message to messages list
         logmsg(f"Message {i} ({msg.role}): {msg.content}")
-        locMessages.append(
+        appendLocMessage(
             ChatAICore.MessageToLocMessage(
                 wrap=_oa_wrap,
                 message=msg,
                 make_file_url=make_file_url))
 
     # Process the history messages
-    for msg in locMessages:
-        appendLocMessage(msg)
+    print(f"Total history messages: {len(getLocMessages())}")
+    for msg in getLocMessages():
         _judge.AddMessage(msg)
         printChatMsg(msg)
 
     session.save_to_disk() # For the local messages
 
-    printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
+    #printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
 
 #==================================================================
 def printFactCheck(fcRepliesStr: str) -> None:

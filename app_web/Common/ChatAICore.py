@@ -61,6 +61,8 @@ def stripUserMessageMeta(msg_with_meta):
 #==================================================================
 def MessageToLocMessage(wrap, message, make_file_url):
     result = {
+        "src_id": message.id,
+        "created_at": message.created_at,
         "role": message.role,
         "content": []
     }

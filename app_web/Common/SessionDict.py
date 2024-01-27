@@ -30,9 +30,8 @@ class SessionDict(dict):
         self.save_to_disk()
 
     def save_to_disk(self):
-        if self.modified:
-            os.makedirs(os.path.dirname(self.filename), exist_ok=True)
-            with open(self.filename, 'w') as f:
-                json.dump(self, f)
-            self.modified = False
-            logmsg(f"Saved session to {self.filename}")
+        os.makedirs(os.path.dirname(self.filename), exist_ok=True)
+        with open(self.filename, 'w') as f:
+            json.dump(self, f)
+        self.modified = False
+        logmsg(f"Saved session to {self.filename}")
