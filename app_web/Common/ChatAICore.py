@@ -216,12 +216,16 @@ def handle_required_action(wrap, run, thread_id):
 
 
 #==================================================================
-def SendUserMessage(wrap, msg_text, assistant_id, thread_id, make_file_url):
+def SendUserMessage(
+        wrap,
+        msg_text,
+        assistant_id,
+        thread_id,
+        make_file_url,
+        on_replies) -> (str, int):
 
     if wait_to_use_thread(wrap, thread_id) == False:
-        # Give up if there's an issue waiting for the previous run on thread
-        yield json.dumps({'replies': []}), 500
-        return
+        return "Thread unavailable", 500
 
     msg_with_meta = prepareUserMessageMeta() + msg_text
     logmsg(f"Sending message: {msg_with_meta}")
@@ -246,25 +250,20 @@ def SendUserMessage(wrap, msg_text, assistant_id, thread_id, make_file_url):
 
         if run.status in ["expired", "cancelling", "cancelled", "failed"]:
             logerr("Run failed")
-            # Indicate failure with a 500 status code
-            yield json.dumps({'replies': []}), 500
-            break
+            return "Run failed", 500
 
         if run.status == "completed":
             # Check for new messages
-            new_messages = wrap.ListThreadMessages(
+            new_messages = wrap.ListAllThreadMessages(
                 thread_id=thread_id,
                 order="asc",
                 after=last_message_id
             )
 
-            if new_messages.data:
-                last_message_id = new_messages.data[-1].id
-                replies = [MessageToLocMessage(wrap, m, make_file_url) for m in new_messages.data]
-                # Yielding partial replies with a 202 status code
-                yield json.dumps({'replies': replies}), 202
+            if new_messages:
+                last_message_id = new_messages[-1].id
+                replies = [MessageToLocMessage(wrap, m, make_file_url) for m in new_messages]
+                on_replies(replies)
 
-            # Indicate completion with a 200 status code
-            yield json.dumps({'replies': []}), 200
-            break
+            return "Run completed", 200
 

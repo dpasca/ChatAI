@@ -216,7 +216,7 @@ def createThread(force_new=False):
         logmsg("Creating new thread with ID " + thread.id)
         # Save the thread ID to the session
         session['thread_id'] = thread.id
-        session.modified = True
+        session.save_to_disk()
     else:
         thread = _oa_wrap.RetrieveThread(session['thread_id'])
         logmsg("Retrieved existing thread with ID " + thread.id)
@@ -229,7 +229,6 @@ def getLocMessages():
 
 def appendLocMessage(message):
     getLocMessages().append(message)
-    session.modified = True
 
 #==================================================================
 logmsg("Creating storage...")
@@ -276,12 +275,12 @@ def index(do_clear=False):
     session['loc_messages'] = []
 
     # Get all the messages from the thread
-    history = _oa_wrap.ListThreadMessages(thread_id=thread_id, order="asc")
-    logmsg(f"Found {len(history.data)} messages in the thread history")
+    history = _oa_wrap.ListAllThreadMessages(thread_id=thread_id)
+    logmsg(f"Found {len(history)} messages in the thread history")
 
     # History in our format
     locMessages = []
-    for (i, msg) in enumerate(history.data):
+    for (i, msg) in enumerate(history):
         # Append message to messages list
         logmsg(f"Message {i} ({msg.role}): {msg.content}")
         locMessages.append(
@@ -296,6 +295,8 @@ def index(do_clear=False):
         _judge.AddMessage(msg)
         printChatMsg(msg)
 
+    session.save_to_disk() # For the local messages
+
     printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
 
 #==================================================================
@@ -304,6 +305,7 @@ def printFactCheck(fcRepliesStr: str) -> None:
         fcReplies = json.loads(fcRepliesStr)
         if len(fcReplies['fact_check']) == 0:
             return
+        #console.log(fcReplies)
 
         outStr = ""
         for reply in fcReplies['fact_check']:
@@ -356,29 +358,27 @@ def main():
 
         thread_id = session['thread_id']
 
-        # Handles the following cases:
-        #  - Partial reply (202, continue to call)
-        #  - Waiting (102, sleep and call again)
-        #  - Process complete (200, do not call again)
-        #  - Error (500, do not call again)
-        for response, status_code in ChatAICore.SendUserMessage(
-            _oa_wrap, user_input, _assistant.id, thread_id, make_file_url):
+        def on_replies(replies: list):
+            for reply in replies:
+                appendLocMessage(reply)
+                _judge.AddMessage(reply)
+                printChatMsg(reply)
+            session.save_to_disk() # For the local messages
 
-            if status_code == 200 or status_code == 202:  # Complete or partial reply
-                replies = json.loads(response)['replies']
-                for reply in replies:
-                    appendLocMessage(reply)
-                    _judge.AddMessage(reply)
-                    printChatMsg(reply)
+        # Send the user message and get the replies
+        status_code = ChatAICore.SendUserMessage(
+            wrap=_oa_wrap,
+            msg_text=user_input,
+            assistant_id=_assistant.id,
+            thread_id=thread_id,
+            make_file_url=make_file_url,
+            on_replies=on_replies)
 
-                if status_code == 200:
-                    # Start the fact-checking
-                    printFactCheck(_judge.GenFactCheck(_oa_wrap))
-                    # Exit the loop
-                    break
-
-            elif status_code == 500:
-                logerr("Error or no new messages")
+        # Start the fact-checking
+        if status_code == 200:
+            printFactCheck(_judge.GenFactCheck(_oa_wrap))
+        elif status_code == 500:
+            logerr("Error or no new messages")
 
 
 if __name__ == "__main__":
