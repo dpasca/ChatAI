@@ -24,17 +24,13 @@ from StorageLocal import StorageLocal as Storage
 from logger import *
 from ConvoJudge import ConvoJudge
 from OAIUtils import *
-import AssistTools
 
 import locale
 # Set the locale to the user's default setting/debug
 locale.setlocale(locale.LC_ALL, '')
 
 USER_BUCKET_PATH = "user_a_00001"
-
 ENABLE_SLEEP_LOGGING = False
-
-ENABLE_WEBSEARCH = True
 
 from SessionDict import SessionDict
 
@@ -138,13 +134,6 @@ with open('config.json') as f:
 with open(config['assistant_instructions'], 'r') as f:
     assistant_instructions = f.read()
 
-FORMAT_INSTRUCT = r"""
-When asked about equations or mathematical formulas you should use LaTeX formatting.
-For each piece of mathematical content:
- 1. If the content is inline, use `$` as prefix and postfix (e.g. `$\Delta x$`)
- 2. If the content is a block, use `$$` as prefix and postfix (e.g. `\n$$\sigma = \frac{1}{2}at^2$$\n` here the `\n` are newlines)
-"""
-
 # Initialize OpenAI API
 _oa_wrap = OpenAIWrapper(api_key=os.environ.get("OPENAI_API_KEY"))
 
@@ -175,45 +164,6 @@ def local_get_user_info():
     session['user_info']['timezone'] = str(currentTime.astimezone().tzinfo)
     return session['user_info']
 
-#==================================================================
-# Create the assistant if it doesn't exist
-def createAssistant():
-    AssistTools.SetSuperGetUserInfoFn(local_get_user_info)
-
-    tools = []
-    tools.append({"type": "code_interpreter"})
-
-    # Setup the tools
-    for name, defn in AssistTools.ToolDefinitions.items():
-        if (not ENABLE_WEBSEARCH) and name == "perform_web_search":
-            continue
-        tools.append({ "type": "function", "function": defn })
-
-    if config["enable_retrieval"]:
-        tools.append({"type": "retrieval"})
-
-    logmsg(f"Tools: {tools}")
-
-    full_instructions = (assistant_instructions
-        + "\n" + ChatAICore.MESSAGEMETA_INSTUCT
-        + "\n" + FORMAT_INSTRUCT)
-
-    codename = config["assistant_codename"]
-
-    # Create or update the assistant
-    assist, was_created = _oa_wrap.CreateOrUpdateAssistant(
-        name=codename,
-        instructions=full_instructions,
-        tools=tools,
-        model=config["model_version"])
-
-    if was_created:
-        logmsg(f"Created new assistant with name {codename}")
-    else:
-        logmsg(f"Updated existing assistant with name {codename}")
-
-    return assist
-
 # Create the thread if it doesn't exist
 def createThread(force_new=False):
     # if there are no messages in the session, add the role message
@@ -236,13 +186,20 @@ def getLocMessages():
 def appendLocMessage(message):
     getLocMessages().append(message)
 
+def save_session():
+    session.save_to_disk()
+
 #==================================================================
 logmsg("Creating storage...")
 _storage = Storage("_storage")
 
 # Create the assistant
 logmsg("Creating assistant...")
-_assistant = createAssistant()
+_assistant = ChatAICore.create_assistant(
+                wrap=_oa_wrap,
+                config=config,
+                instructions=assistant_instructions,
+                get_user_info=local_get_user_info)
 
 #==================================================================
 def make_file_url(file_id, simple_name):
@@ -267,14 +224,7 @@ def make_file_url(file_id, simple_name):
     return _storage.GetFileURL(file_path)
 
 #==================================================================
-def index(do_clear=False):
-    # Load or create the thread
-    thread_id = createThread(force_new=do_clear)
-
-    _judge.ClearMessages()
-
-    printChatMsg(f"Welcome to {config['app_title']}, v{config['app_version']}")
-    printChatMsg(f"Assistant: {config['assistant_name']}")
+def update_messages_history(wrap, thread_id, session, make_file_url):
 
     # See if we have an existing list in the session, if so, get the last message ID
     if not 'loc_messages' in session:
@@ -289,7 +239,7 @@ def index(do_clear=False):
         pass
 
     # Get all the messages from the thread
-    history = _oa_wrap.ListAllThreadMessages(thread_id=thread_id, after=after)
+    history = wrap.ListAllThreadMessages(thread_id=thread_id, after=after)
     print(f"Found {len(history)} new messages in the thread history")
 
     # History in our format
@@ -298,17 +248,33 @@ def index(do_clear=False):
         logmsg(f"Message {i} ({msg.role}): {msg.content}")
         appendLocMessage(
             ChatAICore.MessageToLocMessage(
-                wrap=_oa_wrap,
+                wrap=wrap,
                 message=msg,
                 make_file_url=make_file_url))
+
+#==================================================================
+def index(do_clear=False):
+    # Load or create the thread
+    thread_id = createThread(force_new=do_clear)
+
+    _judge.ClearMessages()
+
+    print(f"Welcome to {config['app_title']}, v{config['app_version']}")
+    print(f"Assistant: {config['assistant_name']}")
+
+    update_messages_history(
+        wrap=_oa_wrap,
+        thread_id=thread_id,
+        session=session,
+        make_file_url=make_file_url)
+
+    save_session() # For the local messages
 
     # Process the history messages
     print(f"Total history messages: {len(getLocMessages())}")
     for msg in getLocMessages():
         _judge.AddMessage(msg)
         printChatMsg(msg)
-
-    session.save_to_disk() # For the local messages
 
     #printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
 
@@ -376,10 +342,10 @@ def main():
                 appendLocMessage(reply)
                 _judge.AddMessage(reply)
                 printChatMsg(reply)
-            session.save_to_disk() # For the local messages
+            save_session() # For the local messages
 
         # Send the user message and get the replies
-        status_code = ChatAICore.SendUserMessage(
+        _, status_code = ChatAICore.SendUserMessage(
             wrap=_oa_wrap,
             msg_text=user_input,
             assistant_id=_assistant.id,
