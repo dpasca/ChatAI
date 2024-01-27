@@ -10,6 +10,7 @@ import time
 from logger import *
 import AssistTools
 import OAIUtils
+import OpenAIWrapper
 
 META_TAG = "message_meta"
 
@@ -22,6 +23,13 @@ unix_time: 1620000000
 The user does not write this. It's injected by the chat app for the assistant to use.
 Do not make any mention of this metadata. Simply use it organically when needed (e.g.
 when asked about the time, use the unix_time value but do not mention it explicitly).
+"""
+
+FORMAT_INSTRUCT = r"""
+When asked about equations or mathematical formulas you should use LaTeX formatting.
+For each piece of mathematical content:
+ 1. If the content is inline, use `$` as prefix and postfix (e.g. `$\Delta x$`)
+ 2. If the content is a block, use `$$` as prefix and postfix (e.g. `\n$$\sigma = \frac{1}{2}at^2$$\n` here the `\n` are newlines)
 """
 
 from typing import Callable
@@ -268,4 +276,46 @@ def SendUserMessage(
                 on_replies(replies)
 
             return "Run completed", 200
+
+#===============================================================================
+# Create the assistant if it doesn't exist
+def create_assistant(
+        wrap: OpenAIWrapper,
+        config: dict,
+        instructions: str,
+        get_user_info: Callable[[], dict]):
+
+    AssistTools.SetSuperGetUserInfoFn(get_user_info)
+
+    tools = []
+    tools.append({"type": "code_interpreter"})
+
+    # Setup the tools
+    for name, defn in AssistTools.ToolDefinitions.items():
+        tools.append({ "type": "function", "function": defn })
+
+    if config["enable_retrieval"]:
+        tools.append({"type": "retrieval"})
+
+    logmsg(f"Tools: {tools}")
+
+    full_instructions = (instructions
+        + "\n" + MESSAGEMETA_INSTUCT
+        + "\n" + FORMAT_INSTRUCT)
+
+    codename = config["assistant_codename"]
+
+    # Create or update the assistant
+    assist, was_created = wrap.CreateOrUpdateAssistant(
+        name=codename,
+        instructions=full_instructions,
+        tools=tools,
+        model=config["model_version"])
+
+    if was_created:
+        logmsg(f"Created new assistant with name {codename}")
+    else:
+        logmsg(f"Updated existing assistant with name {codename}")
+
+    return assist
 
