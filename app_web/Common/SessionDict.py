@@ -22,14 +22,14 @@ class SessionDict(dict):
     def __setitem__(self, key, value):
         self.modified = True
         super(SessionDict, self).__setitem__(key, value)
-        self.saveToDisk()
+        self.save_to_disk()
 
     def __delitem__(self, key):
         self.modified = True
         super(SessionDict, self).__delitem__(key)
-        self.saveToDisk()
+        self.save_to_disk()
 
-    def saveToDisk(self):
+    def save_to_disk(self):
         if self.modified:
             os.makedirs(os.path.dirname(self.filename), exist_ok=True)
             with open(self.filename, 'w') as f:

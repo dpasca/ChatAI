@@ -47,8 +47,37 @@ class OpenAIWrapper:
     def RetrieveThread(self, thread_id):
         return self.client.beta.threads.retrieve(thread_id)
 
-    def ListThreadMessages(self, thread_id, order, after=''):
-        return self.client.beta.threads.messages.list(thread_id=thread_id, order=order, after=after)
+    """
+    def ListThreadMessages(self, thread_id, order='asc', after=''):
+            return self.client.beta.threads.messages.list(
+                thread_id=thread_id,
+                limit=100,
+                order=order,
+                after=after).data
+    """
+
+    def ListAllThreadMessages(self, thread_id, order='asc', after='', before=''):
+        """Return all messages in a thread, in order, as a list."""
+        all_msgs = []
+        while True:
+            msgs = self.client.beta.threads.messages.list(
+                thread_id=thread_id,
+                limit=100,
+                order=order,
+                after=after,
+                before=before)
+
+            if len(msgs.data) == 0:
+                break
+
+            all_msgs.extend(msgs.data)
+
+            if order == "asc":
+                after = msgs.data[-1].id
+            else:
+                before = msgs.data[-1].id
+
+        return all_msgs
 
     def CreateMessage(self, thread_id, role, content):
         return self.client.beta.threads.messages.create(
