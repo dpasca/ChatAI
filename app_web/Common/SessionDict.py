@@ -5,8 +5,8 @@
 # Description: `session` dictionary to simulate Flask's session
 #==================================================================
 
-from logger import *
 import json
+from .logger import *
 
 class SessionDict(dict):
     def __init__(self, filename, *args, **kwargs):

@@ -5,10 +5,9 @@
 # Desc: Storage class for DigitalOcean Spaces
 #==================================================================
 import os
-import inspect
 import boto3
 from botocore.exceptions import ClientError
-from logger import *
+from .logger import *
 
 class StorageCloud:
     def __init__(self, bucket):

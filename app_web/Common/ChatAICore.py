@@ -7,10 +7,10 @@
 
 import json
 import time
-from logger import *
-import AssistTools
-import OAIUtils
-import OpenAIWrapper
+from .logger import *
+from . import AssistTools
+from . import OAIUtils
+from . import OpenAIWrapper
 
 META_TAG = "message_meta"
 

@@ -6,13 +6,12 @@
 #==================================================================
 
 import json
-import locale
 import time
 import pytz
 from datetime import datetime
-from logger import *
 from duckduckgo_search import DDGS
 from typing import Callable
+from .logger import *
 
 super_get_user_info: Callable[[], dict] = lambda: None
 

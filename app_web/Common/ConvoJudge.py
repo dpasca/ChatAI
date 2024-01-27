@@ -5,7 +5,7 @@
 # Description: A judge for conversations
 #==================================================================
 
-from OpenAIWrapper import OpenAIWrapper
+from .OpenAIWrapper import OpenAIWrapper
 
 class ConvoJudge:
     def __init__(self, model, temperature):

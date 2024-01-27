@@ -18,12 +18,16 @@ from io import BytesIO
 load_dotenv()
 
 # Update the path for the modules below
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../app_web/Common'))
-from OpenAIWrapper import OpenAIWrapper
-from StorageLocal import StorageLocal as Storage
-from logger import *
-from ConvoJudge import ConvoJudge
-from OAIUtils import *
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app_web.Common.OpenAIWrapper import OpenAIWrapper
+from app_web.Common.StorageCloud import StorageCloud as Storage
+from app_web.Common.logger import *
+from app_web.Common.OAIUtils import *
+from app_web.Common import ChatAICore
+from app_web.Common.ConvoJudge import ConvoJudge
 
 import locale
 # Set the locale to the user's default setting/debug
@@ -32,7 +36,7 @@ locale.setlocale(locale.LC_ALL, '')
 USER_BUCKET_PATH = "user_a_00001"
 ENABLE_SLEEP_LOGGING = False
 
-from SessionDict import SessionDict
+from app_web.Common.SessionDict import SessionDict
 
 session = SessionDict(f'_storage/{USER_BUCKET_PATH}/session.json')
 logmsg(f"Session: {session}")
@@ -138,8 +142,6 @@ with open(config['assistant_instructions'], 'r') as f:
 _oa_wrap = OpenAIWrapper(api_key=os.environ.get("OPENAI_API_KEY"))
 
 #===============================================================================
-import ChatAICore
-
 def sleepForAPI():
     if ENABLE_LOGGING and ENABLE_SLEEP_LOGGING:
         caller = inspect.currentframe().f_back.f_code.co_name

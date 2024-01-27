@@ -5,8 +5,8 @@
 # Description: Utilities to manage OpenAI API
 #==================================================================
 
-from logger import *
 import re
+from .logger import *
 
 def IsImageAnnotation(a) -> bool:
     return a.type == "file_path" and a.text.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
