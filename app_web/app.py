@@ -13,6 +13,7 @@ import datetime
 from datetime import datetime
 import inspect
 from io import BytesIO
+import threading
 
 # Update the path for the modules below
 from Common.OpenAIWrapper import OpenAIWrapper
@@ -225,39 +226,87 @@ def get_history():
     return jsonify({'messages': getLocMessages()})
 
 #===============================================================================
+from collections import defaultdict
+from queue import Queue
+import time
+
+_replies = defaultdict(lambda: {'queue': Queue(), 'start_time': {}})
+_replies_lock = threading.Lock()
+
+#===============================================================================
+@app.route('/get_replies', methods=['GET'])
+def get_replies():
+    # NOTE: this is the thread ID, not the Python thread
+    thread_id = session['thread_id']
+
+    with _replies_lock:
+        print(f"Checking replies for thread {thread_id}")
+        if thread_id not in _replies:
+            # No replies available yet
+            print(f"No replies available for thread {thread_id}")
+            return jsonify({'message': 'No pending work', 'final': True}), 200
+
+        logmsg(f"Found {_replies[thread_id]['queue'].qsize()} replies for thread {thread_id}")
+        send_replies = []
+        did_reach_end = False
+        while not _replies[thread_id]['queue'].empty():
+            reply = _replies[thread_id]['queue'].get()
+            logmsg(f"Got reply: {reply}")
+            if reply == 'END':
+                logmsg(f"Reached end of replies for thread {thread_id}")
+                del _replies[thread_id]  # Remove the thread entry
+                did_reach_end = True
+                break
+            else:
+                send_replies.append(reply)
+        
+        if not did_reach_end:
+            # Check if we have been waiting for too long
+            # TODO: maybe add a nice timeout protocol ?
+            if (int(time.time()) - _replies[thread_id]['start_time']) > (60*2):
+                logmsg(f"Reached timeout for thread {thread_id}")
+                del _replies[thread_id]
+
+    logmsg(f"Sending {len(send_replies)} replies for thread {thread_id}")
+    return jsonify({'replies': send_replies, 'final': did_reach_end}), 200 
+
+#===============================================================================
 @app.route('/send_message', methods=['POST'])
 @timing_decorator
 def send_message():
-
     msg_text = request.json['message']
-
     thread_id = session['thread_id']
 
-    new_replies = []
-    def on_replies(replies: list):
-        new_replies.extend(replies)
-        for reply in replies:
-            appendLocMessage(reply)
-            #_judge.AddMessage(reply)
-        save_session() # For the local messages
+    def send_message_task(thread_id, msg_text):
+        def on_replies(replies: list):
+            with _replies_lock:
+                for reply in replies:
+                    _replies[thread_id]['queue'].put(reply)
 
-    # Send the user message and get the replies
-    _, status_code = ChatAICore.SendUserMessage(
-        wrap=_oa_wrap,
-        msg_text=msg_text,
-        assistant_id=_assistant.id,
-        thread_id=thread_id,
-        make_file_url=make_file_url,
-        on_replies=on_replies)
+        # Send the user message and get the replies
+        _, _ = ChatAICore.SendUserMessage(
+            wrap=_oa_wrap,
+            msg_text=msg_text,
+            assistant_id=_assistant.id,
+            thread_id=thread_id,
+            make_file_url=make_file_url,
+            on_replies=on_replies)
 
-    logmsg(f"Replies: {new_replies}")
+        # Mark the completion of message processing
+        with _replies_lock:
+            _replies[thread_id]['queue'].append('END')
 
-    if len(new_replies) > 0:
-        logmsg(f"Sending {len(new_replies)} replies")
-        return jsonify({'replies': new_replies}), status_code
-    else:
-        logmsg("Sending no replies")
-        return jsonify({'replies': []}), status_code
+    # Create a new queue for this message thread
+    with _replies_lock:
+        _replies[thread_id]['start_time'] = int(time.time())
+        _replies[thread_id]['queue'] = Queue()
+
+    # NOTE: this `thread` is not the same as `thread_id` above,
+    #  it's a Python thread, while `thread_id` is the OpenAI thread ID
+    thread = threading.Thread(target=send_message_task, args=(thread_id, msg_text))
+    thread.start()
+
+    return jsonify({'status': 'processing'}), 202
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)

@@ -34,6 +34,7 @@ function appendMessage(message, assistant_name='') {
         return;
     }
 
+    //console.log("Appending message:", message);
     var chatBox = document.getElementById('chatbox');
 
     messageHTML = '';
@@ -75,6 +76,9 @@ function appendMessage(message, assistant_name='') {
     chatBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
 }
 
+// Keep track of the waiting message element
+var waitingMessageElement = null;
+
 function appendWaitingAssistMessage(assistant_name) {
     var chatBox = document.getElementById('chatbox');
     var typingDots = '';
@@ -91,6 +95,9 @@ function appendWaitingAssistMessage(assistant_name) {
     chatBox.innerHTML += typingIndicator;
     chatBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
 
+    // Store the waiting message element for later removal
+    waitingMessageElement = chatBox.lastElementChild;
+
     // Animate dots
     let dots = document.querySelector('.typing-dots').children;
     let dotIndex = 0;
@@ -104,9 +111,11 @@ function appendWaitingAssistMessage(assistant_name) {
 }
 
 function removeAssistMessage() {
-    var chatBox = document.getElementById('chatbox');
-    var aiMessage = chatBox.getElementsByClassName('ai-message');
-    aiMessage[aiMessage.length - 1].remove();
+    console.log("Removing waiting message");
+    if (waitingMessageElement) {
+        waitingMessageElement.remove();
+        waitingMessageElement = null;
+    }
 }
 
 // Send message to Flask server and append response to chat
@@ -134,6 +143,7 @@ function sendMessage(userInput, assistant_name) {
     appendWaitingAssistMessage(assistant_name);
 
     // Send message to Flask server
+    //console.log("Sending message:", userInput);
     fetch('/send_message', {
         method: 'POST',
         body: JSON.stringify({ 'message': userInput }),
@@ -148,23 +158,11 @@ function sendMessage(userInput, assistant_name) {
         }
         return response.json();
     })
-    // Append response to chat
     .then(data => {
-        //console.log("Processed data: ", data);
-
-        removeAssistMessage(); // Remove the waiting message
-        inputBox.disabled = false; // Enable input box
-        sendButton.disabled = false; // Enable send button
-
-        if (data.replies.length == 0) {
-            return;
+        if (data.status === 'processing') {
+            // Start polling for replies
+            pollForReplies(assistant_name);
         }
-        for (let message of data.replies) {
-            //console.log("Appending message:", message);
-            appendMessage(message, assistant_name);
-        }
-        // Enable the erase button
-        document.getElementById('erase-button').style.display = 'block';
     })
     .catch(error => {
         console.error('There was a problem with the fetch operation:', error);
@@ -173,6 +171,44 @@ function sendMessage(userInput, assistant_name) {
         removeAssistMessage(); // Remove the waiting message
         inputBox.disabled = false; // Enable input box
         sendButton.disabled = false; // Enable send button
+    });
+}
+
+// Poll for replies from the server
+function pollForReplies(assistant_name) {
+    fetch('/get_replies')
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.replies && data.replies.length > 0) {
+            for (let message of data.replies) {
+                appendMessage(message, assistant_name);
+            }
+        }
+        //console.log("Polling for replies:", data);
+        if (!data.final) {
+            // Continue polling if not final
+            setTimeout(() => pollForReplies(assistant_name), 500); // Poll every some ms
+        } else {
+            // Processing is complete
+            //console.log("Processing complete");
+            document.getElementById('user-input').disabled = false; // Enable input box
+            document.getElementById('send-button').disabled = false; // Enable send button
+            removeAssistMessage(); // Remove the waiting message
+            document.getElementById('erase-button').style.display = 'block'; // Enable the erase button
+        }
+    })
+    .catch(error => {
+        console.error('There was a problem with the fetch operation:', error);
+        // TODO: have an error message appear in the chat
+
+        removeAssistMessage(); // Remove the waiting message
+        document.getElementById('user-input').disabled = false; // Enable input box
+        document.getElementById('send-button').disabled = false; // Enable send button
     });
 }
 
