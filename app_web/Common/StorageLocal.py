@@ -7,7 +7,7 @@
 import os
 import inspect
 import urllib.parse
-from logger import *
+from .logger import *
 
 class StorageLocal:
     def __init__(self, local_dir):

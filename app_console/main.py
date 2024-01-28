@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app_web.Common.OpenAIWrapper import OpenAIWrapper
-from app_web.Common.StorageCloud import StorageCloud as Storage
+from app_web.Common.StorageLocal import StorageLocal as Storage
 from app_web.Common.logger import *
 from app_web.Common.OAIUtils import *
 from app_web.Common import ChatAICore
@@ -48,7 +48,6 @@ from prompt_toolkit.completion import WordCompleter
 
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.style import Style
 from rich.text import Text
 
 USE_SOFT_WRAP = False
@@ -141,6 +140,9 @@ with open(config['assistant_instructions'], 'r') as f:
 # Initialize OpenAI API
 _oa_wrap = OpenAIWrapper(api_key=os.environ.get("OPENAI_API_KEY"))
 
+# Create the thread manager
+_msg_thread = None
+
 #===============================================================================
 def sleepForAPI():
     if ENABLE_LOGGING and ENABLE_SLEEP_LOGGING:
@@ -152,12 +154,6 @@ def sleepForAPI():
 ChatAICore.SetSleepForAPI(sleepForAPI)
 
 #==================================================================
-_judge = None
-if config["support_enable_factcheck"]:
-    _judge = ConvoJudge(
-        model=config["support_model_version"],
-        temperature=config["support_model_temperature"])
-
 # Callback to get the user info from the session
 def local_get_user_info():
     # Populate the session['user_info'] with local user info (shell locale and timezone)
@@ -168,31 +164,37 @@ def local_get_user_info():
     return session['user_info']
 
 # Create the thread if it doesn't exist
-def createThread(force_new=False):
-    if force_new and _judge is not None:
-        _judge.ClearMessages()
+def createThread(force_new=False) -> None:
+    global _msg_thread
 
-    # if there are no messages in the session, add the role message
+    # Create or get the thread
     if ('thread_id' not in session) or (session['thread_id'] is None) or force_new:
-        thread = _oa_wrap.CreateThread()
-        logmsg("Creating new thread with ID " + thread.id)
+        _msg_thread = ChatAICore.MsgThread.create_thread(_oa_wrap)
+        logmsg("Creating new thread with ID " + _msg_thread.thread_id)
         # Save the thread ID to the session
-        session['thread_id'] = thread.id
-        session.save_to_disk()
+        session['thread_id'] = _msg_thread.thread_id
+        if 'msg_thread_data' in session:
+            del session['msg_thread_data']
     else:
-        thread = _oa_wrap.RetrieveThread(session['thread_id'])
-        logmsg("Retrieved existing thread with ID " + thread.id)
-    return thread.id
+        _msg_thread = ChatAICore.MsgThread.from_thread_id(_oa_wrap, session['thread_id'])
+        logmsg("Retrieved existing thread with ID " + _msg_thread.thread_id)
 
-# Local messages management (a cache of the thread)
-def getLocMessages():
-    # Create or get the session messages list
-    return session.setdefault('loc_messages', [])
+    # Get our cached thread messages
+    if 'msg_thread_data' in session:
+        _msg_thread.deserialize_data(session['msg_thread_data'])
 
-def appendLocMessage(message):
-    getLocMessages().append(message)
+    new_n = _msg_thread.fetch_new_messages(make_file_url)
+    print(f"Found {new_n} new messages in the thread history")
+    save_session()
+
+    # Optional: create the judge for the thread
+    if config["support_enable_factcheck"]:
+        _msg_thread.create_judge(
+            model=config["support_model_version"],
+            temperature=config["support_model_temperature"])
 
 def save_session():
+    session['msg_thread_data'] = _msg_thread.serialize_data()
     session.save_to_disk()
 
 #==================================================================
@@ -230,64 +232,25 @@ def make_file_url(file_id, simple_name):
     return _storage.GetFileURL(file_path)
 
 #==================================================================
-def update_messages_history(wrap, thread_id, session, make_file_url):
-
-    # See if we have an existing list in the session, if so, get the last message ID
-    if not 'loc_messages' in session:
-        session['loc_messages'] = []
-
-    after = ''
-    try:
-        if len(session['loc_messages']) > 0:
-            after = session['loc_messages'][-1]['src_id']
-    except:
-        logerr("Error getting last message ID")
-        pass
-
-    # Get all the messages from the thread
-    history = wrap.ListAllThreadMessages(thread_id=thread_id, after=after)
-    print(f"Found {len(history)} new messages in the thread history")
-
-    # History in our format
-    for (i, msg) in enumerate(history):
-        # Append message to messages list
-        logmsg(f"Message {i} ({msg.role}): {msg.content}")
-        appendLocMessage(
-            ChatAICore.MessageToLocMessage(
-                wrap=wrap,
-                message=msg,
-                make_file_url=make_file_url))
-
-#==================================================================
 def index(do_clear=False):
     # Load or create the thread
-    thread_id = createThread(force_new=do_clear)
-
-    if _judge is not None:
-        _judge.ClearMessages()
+    createThread(force_new=do_clear)
 
     print(f"Welcome to {config['app_title']}, v{config['app_version']}")
     print(f"Assistant: {config['assistant_name']}")
 
-    update_messages_history(
-        wrap=_oa_wrap,
-        thread_id=thread_id,
-        session=session,
-        make_file_url=make_file_url)
-
-    save_session() # For the local messages
-
     # Process the history messages
-    print(f"Total history messages: {len(getLocMessages())}")
-    for msg in getLocMessages():
-        if _judge is not None:
-            _judge.AddMessage(msg)
+    print(f"Total history messages: {len(_msg_thread.messages)}")
+    for msg in _msg_thread.messages:
         printChatMsg(msg)
 
-    printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
+    #printFactCheck(_msg_thread.gen_fact_check()) # For debugging
 
 #==================================================================
 def printFactCheck(fcRepliesStr: str) -> None:
+    if fcRepliesStr is None:
+        return
+
     logmsg(f"Fact-check replies: {fcRepliesStr}")
     try:
         fcReplies = json.loads(fcRepliesStr)
@@ -333,8 +296,6 @@ def main():
         user_input = inputChatMsg("user", completer=completer)
 
         if user_input == "/clear":
-            # Clear the local messages and invalidate the thread ID
-            session['loc_messages'] = []
             # Force-create a new thread
             createThread(force_new=True)
             continue
@@ -345,18 +306,21 @@ def main():
 
         thread_id = session['thread_id']
 
+        # Create the user message
+        user_msg = ChatAICore.create_user_message(_oa_wrap, thread_id, user_input, make_file_url)
+        # Add the message to the thread
+        _msg_thread.add_message(user_msg)
+
         def on_replies(replies: list):
             for reply in replies:
-                appendLocMessage(reply)
-                if _judge is not None:
-                    _judge.AddMessage(reply)
+                _msg_thread.add_message(reply)
                 printChatMsg(reply)
             save_session() # For the local messages
 
         # Send the user message and get the replies
         ret_val = ChatAICore.SendUserMessage(
             wrap=_oa_wrap,
-            msg_text=user_input,
+            last_message_id=user_msg['src_id'],
             assistant_id=_assistant.id,
             thread_id=thread_id,
             make_file_url=make_file_url,
@@ -364,8 +328,7 @@ def main():
 
         # Start the fact-checking
         if ret_val == ChatAICore.SUCCESS:
-            if _judge is not None:
-                printFactCheck(_judge.GenFactCheck(_oa_wrap))
+            printFactCheck(_msg_thread.gen_fact_check())
         else:
             logerr(f"Error sending user message: {ret_val}")
 

@@ -232,9 +232,16 @@ def handle_required_action(wrap, run, thread_id):
 
 
 #==================================================================
+def create_user_message(wrap, thread_id, msg_text, make_file_url):
+    msg_with_meta = prepareUserMessageMeta() + msg_text
+    logmsg(f"Creating user message: {msg_with_meta}")
+
+    oai_msg = wrap.CreateMessage(thread_id=thread_id, role="user", content=msg_text)
+    return MessageToLocMessage(wrap, oai_msg, make_file_url)
+
 def SendUserMessage(
         wrap,
-        msg_text,
+        last_message_id,
         assistant_id,
         thread_id,
         make_file_url,
@@ -243,13 +250,8 @@ def SendUserMessage(
     if (ret := wait_to_use_thread(wrap, thread_id)) != SUCCESS:
         return ret
 
-    msg_with_meta = prepareUserMessageMeta() + msg_text
-    logmsg(f"Sending message: {msg_with_meta}")
-
-    msg = wrap.CreateMessage(thread_id=thread_id, role="user", content=msg_text)
     run = wrap.CreateRun(thread_id=thread_id, assistant_id=assistant_id)
 
-    last_message_id = msg.id
     last_printed_status = None
     while True:
         run = wrap.RetrieveRun(thread_id=thread_id, run_id=run.id)
@@ -324,4 +326,83 @@ def create_assistant(
         logmsg(f"Updated existing assistant with name {codename}")
 
     return assist
+
+# Manage an OpenAI thread
+# Starts loading a thread, keeps a local version of the messages
+import json
+#from . import ConvoJudge
+from .ConvoJudge import ConvoJudge
+
+class MsgThread:
+    # Constructor with thread_id
+    def __init__(self, wrap, thread_id):
+        self.wrap = wrap
+        self.thread_id = thread_id
+        self.messages = []
+        self.judge = None
+    
+    @classmethod
+    def create_thread(cls, wrap):
+        oai_thread = wrap.CreateThread()
+        return cls(wrap, oai_thread.id)
+
+    @classmethod
+    def from_thread_id(cls, wrap, thread_id):
+        wrap.RetrieveThread(thread_id)
+        return cls(wrap, thread_id)
+
+    def to_json(self):
+        # Convert messages to a serializable format
+        serializable_messages = [self.message_to_dict(m) for m in self.messages]
+        return json.dumps({
+            'thread_id': self.thread_id,
+            'messages': serializable_messages})
+
+    def message_to_dict(self, message):
+        # Convert a message object to a dictionary
+        return {
+            'src_id': message['src_id'],
+            'created_at': message['created_at'],
+            'role': message['role'],
+            'content': message['content'],
+        }
+
+    def serialize_data(self):
+        return self.to_json()
+
+    def deserialize_data(self, data):
+        attrs = json.loads(data)
+        if attrs['thread_id'] != self.thread_id:
+            logerr(f"Thread ID mismatch: {attrs['thread_id']} != {self.thread_id}. Ignoring.")
+
+        self.thread_id = attrs['thread_id']
+        self.messages = attrs['messages']
+
+    def fetch_new_messages(self, make_file_url):
+        new_oai_messages = self.wrap.ListAllThreadMessages(
+            thread_id=self.thread_id,
+            order="asc",
+            after=self.messages[-1]['src_id'] if self.messages else ''
+        )
+        if new_oai_messages:
+            new_messages = [MessageToLocMessage(self.wrap, m, make_file_url) for m in new_oai_messages]
+            self.messages.extend(new_messages)
+
+        return len(new_oai_messages)
+    
+    def create_judge(self, model, temperature):
+        self.judge = ConvoJudge(model=model, temperature=temperature)
+        for msg in self.messages:
+            self.judge.AddMessage(msg)
+
+    def gen_fact_check(self):
+        if self.judge:
+            return self.judge.GenFactCheck(self.wrap)
+        else:
+            return None
+
+    def add_message(self, msg):
+        self.messages.append(msg)
+        if self.judge:
+            self.judge.AddMessage(msg)
 
