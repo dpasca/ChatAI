@@ -152,10 +152,11 @@ def sleepForAPI():
 ChatAICore.SetSleepForAPI(sleepForAPI)
 
 #==================================================================
-_judge = ConvoJudge(
-    model=config["support_model_version"],
-    temperature=config["support_model_temperature"]
-    )
+_judge = None
+if config["support_enable_factcheck"]:
+    _judge = ConvoJudge(
+        model=config["support_model_version"],
+        temperature=config["support_model_temperature"])
 
 # Callback to get the user info from the session
 def local_get_user_info():
@@ -168,6 +169,9 @@ def local_get_user_info():
 
 # Create the thread if it doesn't exist
 def createThread(force_new=False):
+    if force_new and _judge is not None:
+        _judge.ClearMessages()
+
     # if there are no messages in the session, add the role message
     if ('thread_id' not in session) or (session['thread_id'] is None) or force_new:
         thread = _oa_wrap.CreateThread()
@@ -259,7 +263,8 @@ def index(do_clear=False):
     # Load or create the thread
     thread_id = createThread(force_new=do_clear)
 
-    _judge.ClearMessages()
+    if _judge is not None:
+        _judge.ClearMessages()
 
     print(f"Welcome to {config['app_title']}, v{config['app_version']}")
     print(f"Assistant: {config['assistant_name']}")
@@ -275,13 +280,15 @@ def index(do_clear=False):
     # Process the history messages
     print(f"Total history messages: {len(getLocMessages())}")
     for msg in getLocMessages():
-        _judge.AddMessage(msg)
+        if _judge is not None:
+            _judge.AddMessage(msg)
         printChatMsg(msg)
 
-    #printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
+    printFactCheck(_judge.GenFactCheck(_oa_wrap)) # For debug
 
 #==================================================================
 def printFactCheck(fcRepliesStr: str) -> None:
+    logmsg(f"Fact-check replies: {fcRepliesStr}")
     try:
         fcReplies = json.loads(fcRepliesStr)
         if len(fcReplies['fact_check']) == 0:
@@ -330,7 +337,6 @@ def main():
             session['loc_messages'] = []
             # Force-create a new thread
             createThread(force_new=True)
-            _judge.ClearMessages()
             continue
 
         # Exit condition (you can define your own)
@@ -342,7 +348,8 @@ def main():
         def on_replies(replies: list):
             for reply in replies:
                 appendLocMessage(reply)
-                _judge.AddMessage(reply)
+                if _judge is not None:
+                    _judge.AddMessage(reply)
                 printChatMsg(reply)
             save_session() # For the local messages
 
@@ -357,7 +364,8 @@ def main():
 
         # Start the fact-checking
         if ret_val == ChatAICore.SUCCESS:
-            printFactCheck(_judge.GenFactCheck(_oa_wrap))
+            if _judge is not None:
+                printFactCheck(_judge.GenFactCheck(_oa_wrap))
         else:
             logerr(f"Error sending user message: {ret_val}")
 

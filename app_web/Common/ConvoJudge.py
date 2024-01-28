@@ -17,7 +17,7 @@ class ConvoJudge:
 You will receive a conversation between User and Assistant (a thid party assistant, not you!)
 in the format:
 - SUMMARY (optional): [Summary of the conversation so far]
-- Message: <index> by <role>:\n<content>
+- Message: <id> by <role>:\n<content>
 - Message: ...
 """
 
@@ -54,7 +54,7 @@ Perform a fact-check for the last message in the conversation and reply a fact-c
   "fact_check": [
     {
       "role": <role of the assertion>,
-      "msg_index": <message index>,
+      "msg_id": <message id>,
       "applicable": <true/false>,
       "correctness": <degree of correctness, 0 to 5>
       "rebuttal": <extremely short rebuttal, inclusive of references>,
@@ -82,7 +82,7 @@ NOTES:
         for index in range(staIdx, n):
             srcMsg = self.srcMessages[index]
             #convo += "- " + srcMsg['role'] + ": "
-            convo += f"- Message: {index} by {srcMsg['role']}:\n"
+            convo += f"- Message: {srcMsg['src_id']} by {srcMsg['role']}:\n"
             for cont in srcMsg['content']:
                 convo += cont['value'] + "\n"
         return convo

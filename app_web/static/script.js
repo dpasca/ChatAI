@@ -39,15 +39,15 @@ function appendMessage(message, assistant_name='') {
     //console.log("Appending message:", message);
     var chatBox = document.getElementById('chatbox');
 
-    messageHTML = '';
+    messageHTML = `<div id="${message.src_id}" `;
 
     if (message.role == 'user') {
-        messageHTML += `<div class="user-message">`;
+        messageHTML += `class="user-message">`;
     } else if (message.role == 'assistant') {
-        messageHTML += `<div class="ai-message" data-name="${assistant_name}">`;
+        messageHTML += `class="ai-message" data-name="${assistant_name}">`;
     }
     else {
-        messageHTML += `<div>Unknown role: ${message.role}</div>`;
+        messageHTML += `>Unknown role: ${message.role}</div>`;
         console.error("Unknown role:", message.role);
         return;
     }
@@ -76,6 +76,30 @@ function appendMessage(message, assistant_name='') {
 
     chatBox.innerHTML += messageHTML;
     chatBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
+}
+
+function appendAddendum(addendumMessage, src_id) {
+    // Find the message by src_id
+    var messageDiv = document.getElementById(src_id);
+
+    if (messageDiv === null) {
+        console.error(`No message found with src_id: ${src_id}`);
+        return;
+    }
+
+    // Create a new div for the fact-check message
+    var addendumDiv = document.createElement('div');
+    addendumDiv.className = 'addendum-message';
+
+    // Convert the fact-check message to HTML
+    const reformattedContent = reformatIndentation(addendumMessage);
+    const htmlContent = md.render(reformattedContent);
+
+    // Add the fact-check message to the div
+    addendumDiv.innerHTML = `<div class="markdown-content">${htmlContent}</div>`;
+
+    // Append the fact-check div to the message div
+    messageDiv.appendChild(addendumDiv);
 }
 
 // Global variable to store a reference to the waiting message element and its state
