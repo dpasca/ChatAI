@@ -34,6 +34,8 @@ function appendMessage(message, assistant_name='') {
         return;
     }
 
+    removeWaitingAssistMessage(); // Remove the waiting message
+
     //console.log("Appending message:", message);
     var chatBox = document.getElementById('chatbox');
 
@@ -76,31 +78,26 @@ function appendMessage(message, assistant_name='') {
     chatBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
 }
 
-// Keep track of the waiting message element
-var waitingMessageElement = null;
+// Global variable to store a reference to the waiting message element and its state
+var waitingMessage = { element: null, isVisible: false };
 
 function appendWaitingAssistMessage(assistant_name) {
+    // Check if the waiting message is already visible
+    if (waitingMessage.isVisible) return;
+
     var chatBox = document.getElementById('chatbox');
-    var typingDots = '';
+    var typingDots = '<span>.</span>'.repeat(4);
 
-    // Create typing dots based on numDots parameter
-    var numDots = 4;
-    for (let i = 0; i < numDots; i++) {
-        typingDots += '<span>.</span>';
-    }
+    var typingIndicator = `<div class="ai-message" data-name="${assistant_name}">
+        <b>${assistant_name}</b> is typing<span class="typing-dots">${typingDots}</span>
+    </div>`;
 
-    var typingIndicator = `<div class="ai-message" data-name="${assistant_name}">`;
-    typingIndicator += `<b>${assistant_name}</b> is typing<span class="typing-dots">${typingDots}</span>`;
-    typingIndicator += `</div>`;
     chatBox.innerHTML += typingIndicator;
     chatBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
 
-    // Store the waiting message element for later removal
-    if (waitingMessageElement !== null) {
-        console.error("Waiting message element already exists");
-        waitingMessageElement.remove();
-    }
-    waitingMessageElement = chatBox.lastElementChild;
+    // Update the waiting message state
+    waitingMessage.element = chatBox.lastElementChild;
+    waitingMessage.isVisible = true;
 
     // Animate dots
     let dots = document.querySelector('.typing-dots').children;
@@ -114,12 +111,14 @@ function appendWaitingAssistMessage(assistant_name) {
     }, 500);
 }
 
-function removeAssistMessage() {
-    console.log("Removing waiting message");
-    if (waitingMessageElement) {
-        waitingMessageElement.remove();
-        waitingMessageElement = null;
+function removeWaitingAssistMessage() {
+    // Check if the waiting message exists and is visible
+    if (waitingMessage.isVisible && waitingMessage.element) {
+        waitingMessage.element.remove();
     }
+    // Reset the waiting message state
+    waitingMessage.element = null;
+    waitingMessage.isVisible = false;
 }
 
 // Send message to Flask server and append response to chat
@@ -143,7 +142,7 @@ function sendMessage(userInput, assistant_name) {
     // Append user message to chat
     appendMessage(userMessage);
 
-    // Append a waiting message
+    // Append a waiting message before sending the request
     appendWaitingAssistMessage(assistant_name);
 
     // Send message to Flask server
@@ -172,7 +171,7 @@ function sendMessage(userInput, assistant_name) {
         console.error('There was a problem with the fetch operation:', error);
         // TODO: have an error message appear in the chat
 
-        removeAssistMessage(); // Remove the waiting message
+        removeWaitingAssistMessage(); // Remove the waiting message
         inputBox.disabled = false; // Enable input box
         sendButton.disabled = false; // Enable send button
     });
@@ -202,7 +201,7 @@ function pollForReplies(assistant_name) {
             //console.log("Processing complete");
             document.getElementById('user-input').disabled = false; // Enable input box
             document.getElementById('send-button').disabled = false; // Enable send button
-            removeAssistMessage(); // Remove the waiting message
+            removeWaitingAssistMessage(); // Remove the waiting message
             document.getElementById('erase-button').style.display = 'block'; // Enable the erase button
         }
     })
@@ -210,7 +209,7 @@ function pollForReplies(assistant_name) {
         console.error('There was a problem with the fetch operation:', error);
         // TODO: have an error message appear in the chat
 
-        removeAssistMessage(); // Remove the waiting message
+        removeWaitingAssistMessage(); // Remove the waiting message
         document.getElementById('user-input').disabled = false; // Enable input box
         document.getElementById('send-button').disabled = false; // Enable send button
     });
