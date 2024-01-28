@@ -53,9 +53,14 @@ ChatAICore.SetSleepForAPI(sleepForAPI)
 #    temperature=config["support_model_temperature"]
 #    )
 
+_user_info = dict()
+_user_info_lock = threading.Lock()
+
 # Callback to get the user info from the session
 def local_get_user_info():
-    return session['user_info']
+    # Return a copy of the user info
+    with _user_info_lock:
+        return _user_info.copy()
 
 # Create the thread if it doesn't exist
 def createThread(force_new=False):
@@ -116,9 +121,25 @@ app = create_app()
 def user_info():
     # Store the user info in the session
     user_info = request.get_json()
-    session['user_info'] = user_info
     logmsg(f"User info: {user_info}")
-    return jsonify({'status': 'success'})
+
+    # ensure it has the required fields
+    has_missing_fields = False
+    if not 'timezone' in user_info:
+        logerr("Missing timezone in user info")
+        has_missing_fields = True
+        user_info['timezone'] = 'UTC'
+
+    if not 'user_agent' in user_info:
+        logerr("Missing user_agent in user info")
+        has_missing_fields = True
+        user_info['user_agent'] = 'Unknown'
+
+    with _user_info_lock:
+        global _user_info # Declare to make writeable !
+        _user_info = user_info
+
+    return jsonify({'status': 'success'}) if not has_missing_fields else jsonify({'status': 'error'})
 
 #===============================================================================
 @app.route('/clear_chat', methods=['POST'])
@@ -240,13 +261,13 @@ def get_replies():
     thread_id = session['thread_id']
 
     with _replies_lock:
-        print(f"Checking replies for thread {thread_id}")
+        #logmsg(f"Checking replies for thread {thread_id}")
         if thread_id not in _replies:
             # No replies available yet
             print(f"No replies available for thread {thread_id}")
             return jsonify({'message': 'No pending work', 'final': True}), 200
 
-        logmsg(f"Found {_replies[thread_id]['queue'].qsize()} replies for thread {thread_id}")
+        #logmsg(f"Found {_replies[thread_id]['queue'].qsize()} replies for thread {thread_id}")
         send_replies = []
         did_reach_end = False
         while not _replies[thread_id]['queue'].empty():
@@ -259,15 +280,16 @@ def get_replies():
                 break
             else:
                 send_replies.append(reply)
-        
+ 
         if not did_reach_end:
             # Check if we have been waiting for too long
-            # TODO: maybe add a nice timeout protocol ?
             if (int(time.time()) - _replies[thread_id]['start_time']) > (60*2):
-                logmsg(f"Reached timeout for thread {thread_id}")
+                logerr(f"Reached timeout for thread {thread_id}")
                 del _replies[thread_id]
+                # Force to say that we reached the end (a timout message would be nice)
+                did_reach_end = True
 
-    logmsg(f"Sending {len(send_replies)} replies for thread {thread_id}")
+    #logmsg(f"Sending {len(send_replies)} replies for thread {thread_id}")
     return jsonify({'replies': send_replies, 'final': did_reach_end}), 200 
 
 #===============================================================================
@@ -284,7 +306,7 @@ def send_message():
                     _replies[thread_id]['queue'].put(reply)
 
         # Send the user message and get the replies
-        _, _ = ChatAICore.SendUserMessage(
+        ret_val = ChatAICore.SendUserMessage(
             wrap=_oa_wrap,
             msg_text=msg_text,
             assistant_id=_assistant.id,
@@ -294,7 +316,10 @@ def send_message():
 
         # Mark the completion of message processing
         with _replies_lock:
-            _replies[thread_id]['queue'].append('END')
+            _replies[thread_id]['queue'].put('END')
+
+        if ret_val != ChatAICore.SUCCESS:
+            logerr(f"Error sending user message: {ret_val}")
 
     # Create a new queue for this message thread
     with _replies_lock:

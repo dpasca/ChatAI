@@ -347,7 +347,7 @@ def main():
             save_session() # For the local messages
 
         # Send the user message and get the replies
-        _, status_code = ChatAICore.SendUserMessage(
+        ret_val = ChatAICore.SendUserMessage(
             wrap=_oa_wrap,
             msg_text=user_input,
             assistant_id=_assistant.id,
@@ -356,10 +356,10 @@ def main():
             on_replies=on_replies)
 
         # Start the fact-checking
-        if status_code == 200:
+        if ret_val == ChatAICore.SUCCESS:
             printFactCheck(_judge.GenFactCheck(_oa_wrap))
-        elif status_code == 500:
-            logerr("Error or no new messages")
+        else:
+            logerr(f"Error sending user message: {ret_val}")
 
 
 if __name__ == "__main__":

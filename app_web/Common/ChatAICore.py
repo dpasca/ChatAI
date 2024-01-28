@@ -12,6 +12,12 @@ from . import AssistTools
 from . import OAIUtils
 from . import OpenAIWrapper
 
+# Return codes
+ERR_THREAD_EXPIRED = "ERR_THREAD_EXPIRED"
+ERR_THREAD_TIMEOUT = "ERR_THREAD_TIMEOUT"
+ERR_RUN_FAILED = "ERR_RUN_FAILED"
+SUCCESS = "SUCCESS"
+
 META_TAG = "message_meta"
 
 # Special instructions independent of the basic "role" instructions
@@ -147,22 +153,22 @@ def get_thread_status(wrap, thread_id):
     return data[0].status, data[0].id
 
 #==================================================================
-def wait_to_use_thread(wrap, thread_id) -> bool:
+def wait_to_use_thread(wrap, thread_id) -> str:
     for i in range(5):
         status, run_id = get_thread_status(wrap, thread_id)
         if status is None:
-            return True
+            return SUCCESS
         logmsg(f"Thread status from last run: {status}")
 
         # If it's expired, then we just can't use it anymore
         if status == "expired":
             logerr("Thread expired, cannot use it anymore")
-            return False
+            return ERR_THREAD_EXPIRED
 
         # Acceptable statuses to continue
         if status in ["completed", "failed", "cancelled"]:
             logmsg("Thread is available")
-            return True
+            return SUCCESS
 
         # Waitable states
         if status in ["queued", "in_progress", "cancelling"]:
@@ -178,7 +184,7 @@ def wait_to_use_thread(wrap, thread_id) -> bool:
 
         sleepForAPI()
 
-    return False
+    return ERR_THREAD_TIMEOUT
 
 #==================================================================
 # Handle the required action (function calling)
@@ -232,10 +238,10 @@ def SendUserMessage(
         assistant_id,
         thread_id,
         make_file_url,
-        on_replies) -> (str, int):
+        on_replies) -> str:
 
-    if wait_to_use_thread(wrap, thread_id) == False:
-        return "Thread unavailable", 500
+    if (ret := wait_to_use_thread(wrap, thread_id)) != SUCCESS:
+        return ret
 
     msg_with_meta = prepareUserMessageMeta() + msg_text
     logmsg(f"Sending message: {msg_with_meta}")
@@ -260,7 +266,7 @@ def SendUserMessage(
 
         if run.status in ["expired", "cancelling", "cancelled", "failed"]:
             logerr("Run failed")
-            return "Run failed", 500
+            return ERR_RUN_FAILED
 
         if run.status == "completed":
             # Check for new messages
@@ -275,7 +281,7 @@ def SendUserMessage(
                 replies = [MessageToLocMessage(wrap, m, make_file_url) for m in new_messages]
                 on_replies(replies)
 
-            return "Run completed", 200
+            return SUCCESS
 
 #===============================================================================
 # Create the assistant if it doesn't exist

@@ -96,6 +96,10 @@ function appendWaitingAssistMessage(assistant_name) {
     chatBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
 
     // Store the waiting message element for later removal
+    if (waitingMessageElement !== null) {
+        console.error("Waiting message element already exists");
+        waitingMessageElement.remove();
+    }
     waitingMessageElement = chatBox.lastElementChild;
 
     // Animate dots

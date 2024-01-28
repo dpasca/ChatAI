@@ -46,8 +46,8 @@ def get_unix_time(arguments=None):
     return { "unix_time": int(time.time()) }
 
 def get_user_local_time(arguments=None):
-    timezone = super_get_user_info()['timezone']
     try:
+        timezone = super_get_user_info()['timezone']
         tz_timezone = pytz.timezone(timezone)
         user_time = datetime.now(tz_timezone)
     except:
