@@ -37,6 +37,9 @@ with open(config['assistant_instructions'], 'r') as f:
 # Initialize OpenAI API
 _oa_wrap = OpenAIWrapper(api_key=os.environ.get("OPENAI_API_KEY"))
 
+# Create the thread manager
+_msg_thread = None
+
 #===============================================================================
 def sleepForAPI():
     if ENABLE_LOGGING and ENABLE_SLEEP_LOGGING:
@@ -48,11 +51,6 @@ def sleepForAPI():
 ChatAICore.SetSleepForAPI(sleepForAPI)
 
 #===============================================================================
-#_judge = ConvoJudge(
-#    model=config["support_model_version"],
-#    temperature=config["support_model_temperature"]
-#    )
-
 _user_info = dict()
 _user_info_lock = threading.Lock()
 
@@ -63,28 +61,37 @@ def local_get_user_info():
         return _user_info.copy()
 
 # Create the thread if it doesn't exist
-def createThread(force_new=False):
-    # if there are no messages in the session, add the role message
+def createThread(force_new=False) -> None:
+    global _msg_thread
+
+    # Create or get the thread
     if ('thread_id' not in session) or (session['thread_id'] is None) or force_new:
-        thread = _oa_wrap.CreateThread()
-        logmsg("Creating new thread with ID " + thread.id)
+        _msg_thread = ChatAICore.MsgThread.create_thread(_oa_wrap)
+        logmsg("Creating new thread with ID " + _msg_thread.thread_id)
         # Save the thread ID to the session
-        session['thread_id'] = thread.id
-        session.modified = True
+        session['thread_id'] = _msg_thread.thread_id
+        if 'msg_thread_data' in session:
+            del session['msg_thread_data']
     else:
-        thread = _oa_wrap.RetrieveThread(session['thread_id'])
-        logmsg("Retrieved existing thread with ID " + thread.id)
-    return thread.id
+        _msg_thread = ChatAICore.MsgThread.from_thread_id(_oa_wrap, session['thread_id'])
+        logmsg("Retrieved existing thread with ID " + _msg_thread.thread_id)
 
-# Local messages management (a cache of the thread)
-def getLocMessages():
-    # Create or get the session messages list
-    return session.setdefault('loc_messages', [])
+    # Get our cached thread messages
+    if 'msg_thread_data' in session:
+        _msg_thread.deserialize_data(session['msg_thread_data'])
 
-def appendLocMessage(message):
-    getLocMessages().append(message)
+    new_n = _msg_thread.fetch_new_messages(make_file_url)
+    print(f"Found {new_n} new messages in the thread history")
+    save_session()
+
+    # Optional: create the judge for the thread
+    if config["support_enable_factcheck"]:
+        _msg_thread.create_judge(
+            model=config["support_model_version"],
+            temperature=config["support_model_temperature"])
 
 def save_session():
+    session['msg_thread_data'] = _msg_thread.serialize_data()
     session.modified = True
 
 #===============================================================================
@@ -144,8 +151,6 @@ def user_info():
 #===============================================================================
 @app.route('/clear_chat', methods=['POST'])
 def clear_chat():
-    # Clear the local messages and invalidate the thread ID
-    session['loc_messages'] = []
     # Force-create a new thread
     createThread(force_new=True)
 
@@ -173,56 +178,17 @@ def make_file_url(file_id, simple_name):
     logmsg(f"Getting file url for {file_id}, path: {file_path}")
     return _storage.GetFileURL(file_path)
 
-#===============================================================================
-def update_messages_history(wrap, thread_id, session, make_file_url):
-
-    # See if we have an existing list in the session, if so, get the last message ID
-    if not 'loc_messages' in session:
-        session['loc_messages'] = []
-
-    after = ''
-    try:
-        if len(session['loc_messages']) > 0:
-            after = session['loc_messages'][-1]['src_id']
-    except:
-        logerr("Error getting last message ID")
-        pass
-
-    # Get all the messages from the thread
-    history = wrap.ListAllThreadMessages(thread_id=thread_id, after=after)
-    print(f"Found {len(history)} new messages in the thread history")
-
-    # History in our format
-    for (i, msg) in enumerate(history):
-        # Append message to messages list
-        logmsg(f"Message {i} ({msg.role}): {msg.content}")
-        appendLocMessage(
-            ChatAICore.MessageToLocMessage(
-                wrap=wrap,
-                message=msg,
-                make_file_url=make_file_url))
-
-#===============================================================================
+#==================================================================
 @app.route('/')
 def index():
     # Load or create the thread
-    thread_id = createThread(force_new=False)
-
-    #_judge.ClearMessages()
+    createThread(force_new=False)
 
     print(f"Welcome to {config['app_title']}, v{config['app_version']}")
     print(f"Assistant: {config['assistant_name']}")
 
-    update_messages_history(
-        wrap=_oa_wrap,
-        thread_id=thread_id,
-        session=session,
-        make_file_url=make_file_url)
-
-    save_session() # For the local messages
-
     # Process the history messages
-    print(f"Total history messages: {len(getLocMessages())}")
+    print(f"Total history messages: {len(_msg_thread.messages)}")
 
     return render_template(
                 'chat.html',
@@ -244,7 +210,7 @@ def timing_decorator(func):
 #===============================================================================
 @app.route('/get_history', methods=['GET'])
 def get_history():
-    return jsonify({'messages': getLocMessages()})
+    return jsonify({'messages': _msg_thread.messages})
 
 #===============================================================================
 from collections import defaultdict
@@ -260,6 +226,7 @@ def get_replies():
     # NOTE: this is the thread ID, not the Python thread
     thread_id = session['thread_id']
 
+    send_replies = []
     with _replies_lock:
         #logmsg(f"Checking replies for thread {thread_id}")
         if thread_id not in _replies:
@@ -268,7 +235,6 @@ def get_replies():
             return jsonify({'message': 'No pending work', 'final': True}), 200
 
         #logmsg(f"Found {_replies[thread_id]['queue'].qsize()} replies for thread {thread_id}")
-        send_replies = []
         did_reach_end = False
         while not _replies[thread_id]['queue'].empty():
             reply = _replies[thread_id]['queue'].get()
@@ -280,7 +246,7 @@ def get_replies():
                 break
             else:
                 send_replies.append(reply)
- 
+
         if not did_reach_end:
             # Check if we have been waiting for too long
             if (int(time.time()) - _replies[thread_id]['start_time']) > (60*2):
@@ -288,6 +254,9 @@ def get_replies():
                 del _replies[thread_id]
                 # Force to say that we reached the end (a timout message would be nice)
                 did_reach_end = True
+
+    for reply in send_replies:
+        _msg_thread.add_message(reply)
 
     #logmsg(f"Sending {len(send_replies)} replies for thread {thread_id}")
     return jsonify({'replies': send_replies, 'final': did_reach_end}), 200 
@@ -299,7 +268,12 @@ def send_message():
     msg_text = request.json['message']
     thread_id = session['thread_id']
 
-    def send_message_task(thread_id, msg_text):
+    # Create the user message
+    user_msg = ChatAICore.create_user_message(_oa_wrap, thread_id, msg_text, make_file_url)
+    # Add the message to the thread
+    _msg_thread.add_message(user_msg)
+
+    def send_message_task(thread_id, user_msg_id):
         def on_replies(replies: list):
             with _replies_lock:
                 for reply in replies:
@@ -308,7 +282,7 @@ def send_message():
         # Send the user message and get the replies
         ret_val = ChatAICore.SendUserMessage(
             wrap=_oa_wrap,
-            msg_text=msg_text,
+            last_message_id=user_msg_id,
             assistant_id=_assistant.id,
             thread_id=thread_id,
             make_file_url=make_file_url,
@@ -328,7 +302,7 @@ def send_message():
 
     # NOTE: this `thread` is not the same as `thread_id` above,
     #  it's a Python thread, while `thread_id` is the OpenAI thread ID
-    thread = threading.Thread(target=send_message_task, args=(thread_id, msg_text))
+    thread = threading.Thread(target=send_message_task, args=(thread_id, user_msg['src_id']))
     thread.start()
 
     return jsonify({'status': 'processing'}), 202
