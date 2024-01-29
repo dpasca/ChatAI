@@ -308,25 +308,51 @@ def get_replies():
     with replies.lock:
         if not replies.is_active():
             #logmsg("No pending work")
-            return jsonify({'message': 'No pending work', 'final': True}), 200
+            return jsonify({'replies': [], 'message': 'No pending work', 'final': True}), 200
 
         if replies.get_elapsed() > (60*2):
             #logmsg("Timeout waiting for replies")
-            return jsonify({'message': 'Timeout', 'final': True}), 200 
+            return jsonify({'replies': [], 'message': 'Timeout', 'final': True}), 200
 
         while not replies.empty():
             reply = replies.get()
             logmsg(f"Got reply: {reply}")
             if reply == 'END':
+                session['generate_fchecks'] = True # Tell to make the fact-checks
                 logmsg(f"Reached end of replies")
                 sess_set_replies(TaskQueue())
-                return jsonify({'replies': send_replies, 'final': True}), 200 
+                return jsonify({'replies': send_replies, 'final': True}), 200
             else:
                 sess_get_msg_thread().add_message(reply)
                 send_replies.append(reply)
 
     #logmsg(f"Sending {len(send_replies)} replies")
-    return jsonify({'replies': send_replies, 'final': False}), 200 
+    return jsonify({'replies': send_replies, 'final': False}), 200
+
+#===============================================================================
+@app.route('/get_addendums', methods=['GET'])
+def get_addendums():
+    # Do we have fact-checks to return
+    if ('generate_fchecks' not in session) or not session['generate_fchecks']:
+        return jsonify({'addendums': [], 'message': 'No pending fact-cheks', 'final': True}), 200
+
+    del session['generate_fchecks']
+
+    # We get the fact checks directly in JSON format
+    fc_str = sess_get_msg_thread().gen_fact_check()
+    if fc_str is None:
+        return jsonify({'addendums': [], 'message': 'No pending fact-cheks', 'final': True}), 200
+
+    logmsg(f"Got fact-checks: {fc_str}")
+
+    fc = json.loads(fc_str)
+
+    logmsg(f"FC JSON {fc}")
+
+    #if not fc['applicable']:
+    #    return jsonify({'addendums': [], 'message': 'No pending fact-cheks', 'final': True}), 200
+
+    return jsonify({'addendums': [fc], 'final': True}), 200
 
 #===============================================================================
 @app.route('/send_message', methods=['POST'])
@@ -372,7 +398,10 @@ def send_message():
                 args=(thread_id, user_msg['src_id'], session.sid))
     thread.start()
 
-    return jsonify({'status': 'processing'}), 202
+    # Respond with a "processing" status and with the user message ID
+    # We need the user message ID to match the addendums/fact-checks
+    return jsonify({'status': 'processing',
+                    'user_msg_id': user_msg['src_id']})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)

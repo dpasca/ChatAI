@@ -39,7 +39,9 @@ function appendMessage(message, assistant_name='') {
     //console.log("Appending message:", message);
     var chatBox = document.getElementById('chatbox');
 
+    // Check if we have the src_id
     messageHTML = `<div id="${message.src_id}" `;
+    //console.log("Using src_id:", message.src_id);
 
     if (message.role == 'user') {
         messageHTML += `class="user-message">`;
@@ -78,21 +80,48 @@ function appendMessage(message, assistant_name='') {
     chatBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
 }
 
-function appendAddendum(addendumMessage, src_id) {
-    // Find the message by src_id
-    var messageDiv = document.getElementById(src_id);
+function makeDispLink(link) {
+    // Display link cuts https:// at the beginning
+    return (link.startsWith('https://')) ? link.slice(8) : link;
+}
+function makeMDLink(link) {
+    // Make a markdown link
+    return `[${makeDispLink(link)}](${link})`;
+}
 
+function appendFactCheck(fcheck) {
+    // Find the message by the ID
+    var messageDiv = document.getElementById(fcheck.msg_id);
     if (messageDiv === null) {
-        console.error(`No message found with src_id: ${src_id}`);
+        console.error(`No message found with src_id: ${fcheck.msg_id}`);
         return;
     }
 
     // Create a new div for the fact-check message
     var addendumDiv = document.createElement('div');
     addendumDiv.className = 'addendum-message';
+/*
+    fcColor = '#ff00ff'
+    switch (fcheck.correctness) {
+    case 0: fcColor = '#f00000'; break;
+    case 1: fcColor = '#f04000'; break;
+    case 2: fcColor = '#f08000'; break;
+    case 3: fcColor = '#f0f000'; break;
+    case 4: fcColor = '#40f000'; break;
+    case 5: fcColor = '#00f000'; break;
+    default: fcColor = '#ff00ff'; break;
+    }
+*/
+    fullText = `**NOTE:**`;
+    fullText += ` ${fcheck.rebuttal}`;
+    for (let link of fcheck.links) {
+        fullText += `\n - ${makeMDLink(link)}\n`;
+    }
+
+    //console.log("Fact-check message:", fullText);
 
     // Convert the fact-check message to HTML
-    const reformattedContent = reformatIndentation(addendumMessage);
+    const reformattedContent = reformatIndentation(fullText);
     const htmlContent = md.render(reformattedContent);
 
     // Add the fact-check message to the div
@@ -158,6 +187,7 @@ function sendMessage(userInput, assistant_name) {
     // Construct a message object with the expected format
     const userMessage = {
         role: 'user',
+        src_id: 'PLACEHOLDER_USER_MSG_ID',
         content: [{
             type: 'text',
             value: userInput
@@ -187,6 +217,16 @@ function sendMessage(userInput, assistant_name) {
     })
     .then(data => {
         if (data.status === 'processing') {
+            // Extract the user message ID and place it where
+            //   the temp ID is
+            const tempID = document.getElementById('PLACEHOLDER_USER_MSG_ID');
+            if (tempID) {
+                console.log("Found temp ID:", tempID);
+                tempID.id = data.user_msg_id;
+            }
+            else {
+                console.error("No temp ID found");
+            }
             // Start polling for replies
             pollForReplies(assistant_name);
         }
@@ -227,6 +267,10 @@ function pollForReplies(assistant_name) {
             document.getElementById('send-button').disabled = false; // Enable send button
             removeWaitingAssistMessage(); // Remove the waiting message
             document.getElementById('erase-button').style.display = 'block'; // Enable the erase button
+
+            // Start polling for addendums
+            //console.log("Starting polling for addendums");
+            pollForAddendums();
         }
     })
     .catch(error => {
@@ -238,6 +282,43 @@ function pollForReplies(assistant_name) {
         document.getElementById('send-button').disabled = false; // Enable send button
     });
 }
+
+function pollForAddendums() {
+    fetch('/get_addendums')
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        //console.log("Found addendums:", data.addendums);
+        for (let addendum of data.addendums) {
+            // Check if the addendim has fact-check array
+            if (addendum.hasOwnProperty('fact_check') && addendum.fact_check.length > 0) {
+                console.log("Found fact-checks:", addendum.fact_check);
+                for (let fcheck of addendum.fact_check) {
+                    appendFactCheck(fcheck);
+                }
+            }
+            else {
+                //console.log("No fact-checks found !!");
+            }
+        }
+        // See if we have a 'message'
+        //if (data.hasOwnProperty('message')) {
+        //    console.log("Found message:", data.message);
+        //}
+        if (!data.final) {
+            setTimeout(pollForAddendums, 500); // Poll every 500 ms
+        }
+    })
+    .catch(error => {
+        console.error('Error during fetch:', error);
+    });
+}
+
+
 
 // JS version of markdown-it-latex
 // Test if potential opening or closing delimieter

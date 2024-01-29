@@ -1,3 +1,9 @@
+a {
+    color: #2060e0;
+    text-decoration: none;
+    background-color: transparent;
+}
+
 .header {
     font-size: medium;
 }
@@ -66,14 +72,12 @@
 }
 
 .addendum-message {
-    background-color: #e0e0e0; /* Lighter shade of gray */
-    color: #333; /* Darker text color for contrast */
+    background-color: #b8a0b8e0; /* Lighter shade of gray */
+    color: #324; /* Darker text color for contrast */
     padding: 7px;
-    border: 2px solid #b0b0b0; /* Lighter border color */
-    margin-bottom: 10px;
-    margin-left: 20px; /* Indent addendum messages */
+    border: 2px solid #17102040; /* Lighter border color */
+    border-radius: 10px;
     position: relative;
-    font-style: italic; /* Make the text italic */
 }
 
 #user-input {
