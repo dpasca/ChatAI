@@ -9,6 +9,8 @@ The web app is based on _Flask_ and it's tested to run on DigitalOcean App platf
 This application is mainly developed by [Davide Pasca](https://github.com/dpasca).\
 See commits for other contributors.
 
+<img src="docs/chatai_sshot_main_01.webp" width="350">
+
 ## Features
 
 - AI chatbot based on OpenAI and Assistant API (beta)
