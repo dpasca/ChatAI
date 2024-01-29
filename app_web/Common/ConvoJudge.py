@@ -65,6 +65,7 @@ Perform a fact-check for the last message in the conversation and reply a fact-c
 ---
 NOTES:
 - Do not produce "rebuttal" or "links" if "applicable" is false.
+- Do not generate URLs creatively. Any URL link must exist and be valid.
 - Beware of the fact that the assisant may have tools that you may not be
   aware of, such as access to the Internet and user's details.
 """
