@@ -96,10 +96,6 @@ function appendFactCheck(fcheck) {
         console.error(`No message found with src_id: ${fcheck.msg_id}`);
         return;
     }
-
-    // Create a new div for the fact-check message
-    var addendumDiv = document.createElement('div');
-    addendumDiv.className = 'addendum-message';
 /*
     fcColor = '#ff00ff'
     switch (fcheck.correctness) {
@@ -112,11 +108,16 @@ function appendFactCheck(fcheck) {
     default: fcColor = '#ff00ff'; break;
     }
 */
-    fullText = `**NOTE:**`;
-    fullText += ` ${fcheck.rebuttal}`;
+    fullText = "";
+    // if rebuttal is not empty
+    if (fcheck.rebuttal !== "") {
+        fullText = `**NOTE:** ${fcheck.rebuttal}`;
+    }
     for (let link of fcheck.links) {
         fullText += `\n - ${makeMDLink(link)}\n`;
     }
+    // Return if there is no text to display
+    if (fullText === "") return;
 
     //console.log("Fact-check message:", fullText);
 
@@ -124,6 +125,9 @@ function appendFactCheck(fcheck) {
     const reformattedContent = reformatIndentation(fullText);
     const htmlContent = md.render(reformattedContent);
 
+    // Create a new div for the fact-check message
+    var addendumDiv = document.createElement('div');
+    addendumDiv.className = 'addendum-message';
     // Add the fact-check message to the div
     addendumDiv.innerHTML = `<div class="markdown-content">${htmlContent}</div>`;
 
