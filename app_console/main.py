@@ -27,7 +27,6 @@ from app_web.Common.StorageLocal import StorageLocal as Storage
 from app_web.Common.logger import *
 from app_web.Common.OAIUtils import *
 from app_web.Common import ChatAICore
-from app_web.Common.ConvoJudge import ConvoJudge
 
 import locale
 # Set the locale to the user's default setting/debug
@@ -42,8 +41,7 @@ session = SessionDict(f'_storage/{USER_BUCKET_PATH}/session.json')
 logmsg(f"Session: {session}")
 
 #==================================================================
-from prompt_toolkit import prompt, print_formatted_text
-from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit import prompt
 from prompt_toolkit.completion import WordCompleter
 
 from rich.console import Console

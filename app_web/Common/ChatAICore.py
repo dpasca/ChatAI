@@ -188,7 +188,7 @@ def wait_to_use_thread(wrap, thread_id) -> str:
 
 #==================================================================
 # Handle the required action (function calling)
-def handle_required_action(wrap, run, thread_id):
+def handle_required_action(wrap, run, thread_id, tools_user_data):
     if run.required_action is None:
         logerr("run.required_action is None")
         return
@@ -206,6 +206,9 @@ def handle_required_action(wrap, run, thread_id):
 
         logmsg(f"Function Name: {name}")
         logmsg(f"Arguments: {arguments}")
+
+        # Add the tools_user_data to the arguments
+        arguments["tools_user_data"] = tools_user_data
 
         # Look up the function in the dictionary and call it
         if name in AssistTools.ToolActions:
@@ -245,7 +248,8 @@ def SendUserMessage(
         assistant_id,
         thread_id,
         make_file_url,
-        on_replies) -> str:
+        on_replies,
+        tools_user_data=None) -> str:
 
     if (ret := wait_to_use_thread(wrap, thread_id)) != SUCCESS:
         return ret
@@ -264,7 +268,7 @@ def SendUserMessage(
 
         if run.status == "requires_action":
             # Handle the function-calling
-            handle_required_action(wrap, run, thread_id)
+            handle_required_action(wrap, run, thread_id, tools_user_data)
 
         if run.status in ["expired", "cancelling", "cancelled", "failed"]:
             logerr("Run failed")
@@ -293,7 +297,7 @@ def create_assistant(
         instructions: str,
         get_user_info: Callable[[], dict]):
 
-    AssistTools.SetSuperGetUserInfoFn(get_user_info)
+    AssistTools.set_super_get_user_info(get_user_info)
 
     tools = []
     tools.append({"type": "code_interpreter"})

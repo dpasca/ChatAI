@@ -1,6 +1,7 @@
+# Requirements for the Web App !
 flask
+Flask-Session
 openai
-#apscheduler
 duckduckgo_search
 python-dotenv
 boto3

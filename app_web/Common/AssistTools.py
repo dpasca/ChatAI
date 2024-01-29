@@ -10,12 +10,13 @@ import time
 import pytz
 from datetime import datetime
 from duckduckgo_search import DDGS
-from typing import Callable
 from .logger import *
 
-super_get_user_info: Callable[[], dict] = lambda: None
+from typing import Callable, Optional
 
-def SetSuperGetUserInfoFn(super_get_user_info_):
+super_get_user_info: Callable[[Optional[dict]], dict] = lambda arguments=None: None
+
+def set_super_get_user_info(super_get_user_info_: Callable[[Optional[dict]], dict]):
     global super_get_user_info
     super_get_user_info = super_get_user_info_
 
@@ -40,17 +41,19 @@ def perform_web_search(arguments):
     return ddgsTextSearch(arguments["query"], max_results=10)
 
 def get_user_info(arguments=None):
-    return { "user_info": super_get_user_info() }
+    return { "user_info": super_get_user_info(arguments) }
 
 def get_unix_time(arguments=None):
     return { "unix_time": int(time.time()) }
 
 def get_user_local_time(arguments=None):
     try:
-        timezone = super_get_user_info()['timezone']
+        uinfo = super_get_user_info(arguments)
+        timezone = uinfo['timezone']
         tz_timezone = pytz.timezone(timezone)
         user_time = datetime.now(tz_timezone)
     except:
+        timezone = "UTC"
         user_time = datetime.now()
     return {
         "user_local_time": json.dumps(user_time, default=str),

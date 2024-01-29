@@ -9,6 +9,7 @@ import sys
 import json
 import time
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask_session import Session
 import datetime
 from datetime import datetime
 import inspect
@@ -37,9 +38,6 @@ with open(config['assistant_instructions'], 'r') as f:
 # Initialize OpenAI API
 _oa_wrap = OpenAIWrapper(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Create the thread manager
-_msg_thread = None
-
 #===============================================================================
 def sleepForAPI():
     if ENABLE_LOGGING and ENABLE_SLEEP_LOGGING:
@@ -51,47 +49,133 @@ def sleepForAPI():
 ChatAICore.SetSleepForAPI(sleepForAPI)
 
 #===============================================================================
-_user_info = dict()
-_user_info_lock = threading.Lock()
+from queue import Queue
+import time
 
-# Callback to get the user info from the session
-def local_get_user_info():
-    # Return a copy of the user info
-    with _user_info_lock:
-        return _user_info.copy()
+class TaskQueue:
+    def __init__(self, start_time=0):
+        self.start_time = start_time
+        self.queue = Queue()
+        self.lock = threading.Lock()
+
+    def is_active(self):
+        return self.start_time != 0
+
+    def get_elapsed(self):
+        return int(time.time()) - self.start_time
+
+    def put(self, item):
+        self.queue.put(item)
+
+    def get(self):
+        return self.queue.get()
+
+    def empty(self):
+        return self.queue.empty()
+
+#===============================================================================
+from threading import Lock
+
+class AppSession:
+    def __init__(self):
+        self.lock = Lock()
+        self.user_info = dict()
+        self.msg_thread = None
+        self.replies = TaskQueue()
+
+_app_sessions = {}
+
+def get_or_create_app_session(sid):
+    global _app_sessions
+    if sid not in _app_sessions:
+        _app_sessions[sid] = AppSession()
+    return _app_sessions[sid]
+
+def sess_get_lock():
+    sess = get_or_create_app_session(session.sid)
+    return sess.lock
+
+def sess_get_user_info(session_id=None):
+    if session_id is None:
+        session_id = session.sid
+    sess = get_or_create_app_session(session_id)
+    with sess.lock:
+        return sess.user_info
+
+def sess_set_user_info(new_info):
+    sess = get_or_create_app_session(session.sid)
+    with sess.lock:
+        sess.user_info = new_info
+
+def sess_get_msg_thread():
+    logmsg(f"Getting thread")
+    sess = get_or_create_app_session(session.sid)
+    with sess.lock:
+        return sess.msg_thread
+
+def sess_set_msg_thread(new_thread):
+    logmsg(f"Setting new thread: {new_thread}")
+    sess = get_or_create_app_session(session.sid)
+    with sess.lock:
+        sess.msg_thread = new_thread
+
+def sess_get_replies(session_id=None):
+    if session_id is None:
+        session_id = session.sid
+    sess = get_or_create_app_session(session_id)
+    with sess.lock:
+        return sess.replies
+
+def sess_set_replies(new_replies):
+    sess = get_or_create_app_session(session.sid)
+    with sess.lock:
+        sess.replies = new_replies
+
+def sess_extend_replies(new_list, session_id):
+    sess = get_or_create_app_session(session_id)
+    with sess.lock:
+        with sess.replies.lock:
+            for item in new_list:
+                sess.replies.put(item)
+
+def local_get_user_info(arguments):
+    return sess_get_user_info(arguments['tools_user_data'])
 
 # Create the thread if it doesn't exist
 def createThread(force_new=False) -> None:
-    global _msg_thread
-
     # Create or get the thread
-    if ('thread_id' not in session) or (session['thread_id'] is None) or force_new:
-        _msg_thread = ChatAICore.MsgThread.create_thread(_oa_wrap)
-        logmsg("Creating new thread with ID " + _msg_thread.thread_id)
+    if ('thread_id' not in session) or force_new:
+        mt = ChatAICore.MsgThread.create_thread(_oa_wrap)
+        sess_set_msg_thread(mt)
+        logmsg("Creating new thread with ID " + mt.thread_id)
         # Save the thread ID to the session
-        session['thread_id'] = _msg_thread.thread_id
+        session['thread_id'] = mt.thread_id
         if 'msg_thread_data' in session:
             del session['msg_thread_data']
     else:
-        _msg_thread = ChatAICore.MsgThread.from_thread_id(_oa_wrap, session['thread_id'])
-        logmsg("Retrieved existing thread with ID " + _msg_thread.thread_id)
+        mt = ChatAICore.MsgThread.from_thread_id(_oa_wrap, session['thread_id'])
+        sess_set_msg_thread(mt)
+        logmsg("Retrieved existing thread with ID " + mt.thread_id)
 
     # Get our cached thread messages
     if 'msg_thread_data' in session:
-        _msg_thread.deserialize_data(session['msg_thread_data'])
+        mt.deserialize_data(session['msg_thread_data'])
 
-    new_n = _msg_thread.fetch_new_messages(make_file_url)
+    new_n = mt.fetch_new_messages(make_file_url)
     print(f"Found {new_n} new messages in the thread history")
     save_session()
 
     # Optional: create the judge for the thread
     if config["support_enable_factcheck"]:
-        _msg_thread.create_judge(
+        mt.create_judge(
             model=config["support_model_version"],
             temperature=config["support_model_temperature"])
 
 def save_session():
-    session['msg_thread_data'] = _msg_thread.serialize_data()
+    # When saving the session, we serialize our local thread data to the session obj
+    if (mt := sess_get_msg_thread()) is not None:
+        session['msg_thread_data'] = mt.serialize_data()
+    # Save the session (?)
     session.modified = True
 
 #===============================================================================
@@ -119,6 +203,11 @@ def create_app():
     if ENABLE_LOGGING:
         print("Logging is ENABLED")
 
+    # Serve-side session
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config.from_object(__name__)
+    Session(app)
+
     return app
 
 app = create_app()
@@ -142,9 +231,7 @@ def user_info():
         has_missing_fields = True
         user_info['user_agent'] = 'Unknown'
 
-    with _user_info_lock:
-        global _user_info # Declare to make writeable !
-        _user_info = user_info
+    sess_set_user_info(user_info)
 
     return jsonify({'status': 'success'}) if not has_missing_fields else jsonify({'status': 'error'})
 
@@ -188,7 +275,7 @@ def index():
     print(f"Assistant: {config['assistant_name']}")
 
     # Process the history messages
-    print(f"Total history messages: {len(_msg_thread.messages)}")
+    print(f"Total history messages: {len(sess_get_msg_thread().messages)}")
 
     return render_template(
                 'chat.html',
@@ -210,56 +297,36 @@ def timing_decorator(func):
 #===============================================================================
 @app.route('/get_history', methods=['GET'])
 def get_history():
-    return jsonify({'messages': _msg_thread.messages})
-
-#===============================================================================
-from collections import defaultdict
-from queue import Queue
-import time
-
-_replies = defaultdict(lambda: {'queue': Queue(), 'start_time': {}})
-_replies_lock = threading.Lock()
+    return jsonify({'messages': sess_get_msg_thread().messages})
 
 #===============================================================================
 @app.route('/get_replies', methods=['GET'])
 def get_replies():
-    # NOTE: this is the thread ID, not the Python thread
-    thread_id = session['thread_id']
 
+    replies = sess_get_replies()
     send_replies = []
-    with _replies_lock:
-        #logmsg(f"Checking replies for thread {thread_id}")
-        if thread_id not in _replies:
-            # No replies available yet
-            print(f"No replies available for thread {thread_id}")
+    with replies.lock:
+        if not replies.is_active():
+            #logmsg("No pending work")
             return jsonify({'message': 'No pending work', 'final': True}), 200
 
-        #logmsg(f"Found {_replies[thread_id]['queue'].qsize()} replies for thread {thread_id}")
-        did_reach_end = False
-        while not _replies[thread_id]['queue'].empty():
-            reply = _replies[thread_id]['queue'].get()
+        if replies.get_elapsed() > (60*2):
+            #logmsg("Timeout waiting for replies")
+            return jsonify({'message': 'Timeout', 'final': True}), 200 
+
+        while not replies.empty():
+            reply = replies.get()
             logmsg(f"Got reply: {reply}")
             if reply == 'END':
-                logmsg(f"Reached end of replies for thread {thread_id}")
-                del _replies[thread_id]  # Remove the thread entry
-                did_reach_end = True
-                break
+                logmsg(f"Reached end of replies")
+                sess_set_replies(TaskQueue())
+                return jsonify({'replies': send_replies, 'final': True}), 200 
             else:
+                sess_get_msg_thread().add_message(reply)
                 send_replies.append(reply)
 
-        if not did_reach_end:
-            # Check if we have been waiting for too long
-            if (int(time.time()) - _replies[thread_id]['start_time']) > (60*2):
-                logerr(f"Reached timeout for thread {thread_id}")
-                del _replies[thread_id]
-                # Force to say that we reached the end (a timout message would be nice)
-                did_reach_end = True
-
-    for reply in send_replies:
-        _msg_thread.add_message(reply)
-
-    #logmsg(f"Sending {len(send_replies)} replies for thread {thread_id}")
-    return jsonify({'replies': send_replies, 'final': did_reach_end}), 200 
+    #logmsg(f"Sending {len(send_replies)} replies")
+    return jsonify({'replies': send_replies, 'final': False}), 200 
 
 #===============================================================================
 @app.route('/send_message', methods=['POST'])
@@ -271,13 +338,11 @@ def send_message():
     # Create the user message
     user_msg = ChatAICore.create_user_message(_oa_wrap, thread_id, msg_text, make_file_url)
     # Add the message to the thread
-    _msg_thread.add_message(user_msg)
+    sess_get_msg_thread().add_message(user_msg)
 
-    def send_message_task(thread_id, user_msg_id):
-        def on_replies(replies: list):
-            with _replies_lock:
-                for reply in replies:
-                    _replies[thread_id]['queue'].put(reply)
+    def send_message_task(thread_id, user_msg_id, session_id):
+        def on_replies(src_replies: list):
+            sess_extend_replies(src_replies, session_id)
 
         # Send the user message and get the replies
         ret_val = ChatAICore.SendUserMessage(
@@ -286,23 +351,25 @@ def send_message():
             assistant_id=_assistant.id,
             thread_id=thread_id,
             make_file_url=make_file_url,
-            on_replies=on_replies)
+            on_replies=on_replies,
+            tools_user_data=session_id)
 
         # Mark the completion of message processing
-        with _replies_lock:
-            _replies[thread_id]['queue'].put('END')
+        replies = sess_get_replies(session_id)
+        with replies.lock:
+            replies.put('END')
 
         if ret_val != ChatAICore.SUCCESS:
             logerr(f"Error sending user message: {ret_val}")
 
     # Create a new queue for this message thread
-    with _replies_lock:
-        _replies[thread_id]['start_time'] = int(time.time())
-        _replies[thread_id]['queue'] = Queue()
+    sess_set_replies(TaskQueue(start_time=int(time.time())))
 
     # NOTE: this `thread` is not the same as `thread_id` above,
     #  it's a Python thread, while `thread_id` is the OpenAI thread ID
-    thread = threading.Thread(target=send_message_task, args=(thread_id, user_msg['src_id']))
+    thread = threading.Thread(
+                target=send_message_task,
+                args=(thread_id, user_msg['src_id'], session.sid))
     thread.start()
 
     return jsonify({'status': 'processing'}), 202

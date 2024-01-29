@@ -1,4 +1,6 @@
+# Requirements for the Web App !
 flask
+Flask-Session
 openai
 duckduckgo_search
 python-dotenv
