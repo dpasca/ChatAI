@@ -96,22 +96,32 @@ function appendFactCheck(fcheck) {
         console.error(`No message found with src_id: ${fcheck.msg_id}`);
         return;
     }
-/*
-    fcColor = '#ff00ff'
-    switch (fcheck.correctness) {
-    case 0: fcColor = '#f00000'; break;
-    case 1: fcColor = '#f04000'; break;
-    case 2: fcColor = '#f08000'; break;
-    case 3: fcColor = '#f0f000'; break;
-    case 4: fcColor = '#40f000'; break;
-    case 5: fcColor = '#00f000'; break;
-    default: fcColor = '#ff00ff'; break;
-    }
-*/
+
     fullText = "";
+    switch (fcheck.correctness) {
+    case 0:
+    case 1: 
+    case 2: fullText += '❌'; break;
+    case 3:
+    case 4:
+    case 5: fullText += '✅'; break;
+    default: fullText += '❓'; break;
+    }
+
     // if rebuttal is not empty
     if (fcheck.rebuttal !== "") {
-        fullText = `**NOTE:** ${fcheck.rebuttal}`;
+        fullText += ` ${fcheck.rebuttal}`;
+    }
+    else {
+        switch (fcheck.correctness) {
+        case 0:
+        case 1: 
+        case 2: fullText += ' Not Credible'; break;
+        case 3:
+        case 4:
+        case 5: fullText += ' Credible'; break;
+        default: break;
+        }
     }
     for (let link of fcheck.links) {
         fullText += `\n - ${makeMDLink(link)}\n`;
@@ -225,7 +235,7 @@ function sendMessage(userInput, assistant_name) {
             //   the temp ID is
             const tempID = document.getElementById('PLACEHOLDER_USER_MSG_ID');
             if (tempID) {
-                console.log("Found temp ID:", tempID);
+                //console.log("Found temp ID:", tempID);
                 tempID.id = data.user_msg_id;
             }
             else {
@@ -302,7 +312,9 @@ function pollForAddendums() {
             if (addendum.hasOwnProperty('fact_check') && addendum.fact_check.length > 0) {
                 console.log("Found fact-checks:", addendum.fact_check);
                 for (let fcheck of addendum.fact_check) {
-                    appendFactCheck(fcheck);
+                    if (fcheck.applicable) {
+                        appendFactCheck(fcheck);
+                    }
                 }
             }
             else {

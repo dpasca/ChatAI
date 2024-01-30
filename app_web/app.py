@@ -139,6 +139,8 @@ def sess_extend_replies(new_list, session_id):
                 sess.replies.put(item)
 
 def local_get_user_info(arguments):
+    if 'tools_user_data' not in arguments:
+        return 'No user info available'
     return sess_get_user_info(arguments['tools_user_data'])
 
 # Create the thread if it doesn't exist
@@ -339,7 +341,7 @@ def get_addendums():
     del session['generate_fchecks']
 
     # We get the fact checks directly in JSON format
-    fc_str = sess_get_msg_thread().gen_fact_check()
+    fc_str = sess_get_msg_thread().gen_fact_check(tools_user_data=session.sid)
     if fc_str is None:
         return jsonify({'addendums': [], 'message': 'No pending fact-cheks', 'final': True}), 200
 

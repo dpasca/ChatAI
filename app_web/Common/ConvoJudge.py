@@ -5,7 +5,10 @@
 # Description: A judge for conversations
 #==================================================================
 
+import json
+from .logger import *
 from .OpenAIWrapper import OpenAIWrapper
+from . import AssistTools
 
 class ConvoJudge:
     def __init__(self, model, temperature):
@@ -47,8 +50,22 @@ Reply in the following format:
 """
 
         self.instructionsForFactCheck = CONVO_DESC + """
-You MUST reply in JSON format, no exceptions.
-Perform a fact-check for the last message in the conversation and reply a fact-check list with the following format:
+You are a fact-checker that performs in-depth research on
+any given statement of the conversation described above.
+Provide a rebuttal with details, clarifications, references,
+opposing views and counter-arguments.
+Be concise, respond "robotically" but be detailed, exacting, precise, fastidious.
+When refuting, provide the reasoning and calculations behind your rebuttal.
+Use the web search tool as much as possible.
+Use the tool get_user_local_time when the topic of time and dates is involved.
+Use all the tools at your disposal as much as possible, they provide accuracy
+and your foremost goal is to provide accuracy and correctness.
+Ignore checking on political topics.
+Beware of the fact that the assistant may have access to information
+may not be aware of, such as the user's background, location, etc.
+
+## Output format
+You MUST reply in JSON format, no exceptions. Example:
 ---
 {
   "fact_check": [
@@ -63,11 +80,8 @@ Perform a fact-check for the last message in the conversation and reply a fact-c
   ]
 }
 ---
-NOTES:
 - Do not produce "rebuttal" or "links" if "applicable" is false.
-- Do not generate URLs creatively. Any URL link must exist and be valid.
-- Beware of the fact that the assisant may have tools that you may not be
-  aware of, such as access to the Internet and user's details.
+- Any URL link must exist and must be valid.
 """
 
     def AddMessage(self, srcMsg):
@@ -76,34 +90,118 @@ NOTES:
     def ClearMessages(self):
         self.srcMessages = []
 
+    def makeConvoMessage(self, src_id, role, content):
+        out = f"- Message: {src_id} by {role}:\n"
+        for cont in content:
+            out += cont['value'] + "\n"
+        return out
+
     def buildConvoString(self, maxMessages):
         convo = ""
         n = len(self.srcMessages)
         staIdx = max(0, n - maxMessages)
         for index in range(staIdx, n):
             srcMsg = self.srcMessages[index]
-            #convo += "- " + srcMsg['role'] + ": "
-            convo += f"- Message: {srcMsg['src_id']} by {srcMsg['role']}:\n"
-            for cont in srcMsg['content']:
-                convo += cont['value'] + "\n"
+            convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
         return convo
 
-    def genCompletion(self, wrap, instructions, maxMessages=1000):
-        convo = self.buildConvoString(maxMessages)
+    @staticmethod
+    def apply_tools(response, tools_user_data) -> list:
+        response_msg = response.choices[0].message
+        calls = response_msg.tool_calls
+        logmsg(f"Tool calls: {calls}")
+        # Check if the model wanted to call a function
+        if not calls:
+            return []
+
+        messages = []
+        # Extend conversation with assistant's reply
+        messages.append(response_msg)
+
+        # Process each tool/function call
+        for call in calls:
+            name = call.function.name
+            args = json.loads(call.function.arguments)
+
+            logmsg(f"Tool call: {name}({args})")
+
+            # Add the tools_user_data to the arguments
+            args["tools_user_data"] = tools_user_data
+
+            # Look up the function in the dictionary and call it
+            if name in AssistTools.ToolActions:
+                function_response = AssistTools.ToolActions[name](args)
+            else:
+                function_response = AssistTools.fallback_tool_function(name, args)
+
+            # Extend conversation with function response
+            messages.append({
+                "tool_call_id": call.id,
+                "role": "tool",
+                "name": name,
+                "content": json.dumps(function_response),
+            })
+
+        return messages
+
+    def genCompletion(self, wrap, instructions, convo, tools_user_data=None):
+        # Setup the tools
+        tools = []
+        #tools.append({"type": "code_interpreter"})
+        #tools.append({"type": "retrieval"})
+        for _, defn in AssistTools.ToolDefinitions.items():
+            tools.append({ "type": "function", "function": defn })
+
         #print(f"Sending Conversation:\n{convo}\n------")
+        messages = [
+            {"role": "system", "content": instructions},
+            {"role": "user",   "content": convo}
+        ]
+        # Generate the first response
         response = wrap.CreateCompletion(
             model=self.model,
             temperature=self.temperature,
-            messages=[
-            {"role": "system", "content": instructions},
-            {"role": "user",   "content": convo}
-        ])
+            messages=messages,
+            tools=tools,
+        )
+
+        # See if there are any tools to apply
+        if (new_messages := ConvoJudge.apply_tools(response, tools_user_data)):
+            logmsg(f"Applying tools: {new_messages}")
+            messages += new_messages
+            logmsg(f"New conversation with tool answers: {messages}")
+            # Post-function-call conversation
+            post_tool_response = wrap.CreateCompletion(
+                model=self.model,
+                temperature=self.temperature,
+                messages=messages,
+            )
+            return post_tool_response.choices[0].message.content
+
         return response.choices[0].message.content
 
     def GenSummary(self, wrap):
-        return self.genCompletion(wrap, self.instructionsForSummary)
+        convo = self.buildConvoString(1000)
+        return self.genCompletion(wrap, self.instructionsForSummary, convo)
+
     def GenCritique(self, wrap):
-        return self.genCompletion(wrap, self.instructionsForCritique)
-    def GenFactCheck(self, wrap):
-        return self.genCompletion(wrap, self.instructionsForFactCheck, 3)
+        convo = self.buildConvoString(1000)
+        return self.genCompletion(wrap, self.instructionsForCritique, convo)
+
+    def GenFactCheck(self, wrap, tools_user_data):
+        # The conversation is split into two parts:
+        # - the first part is the context, which is not fact-checked
+        # - the second part is the actual fact-checking
+        CONTEXT_MESSAGES = 8
+        FACT_CHECK_MESSAGES = 2
+        convo = "## Begin context for fact-checking. Context-only DO NOT fact-check\n"
+        n = len(self.srcMessages)
+        staIdx = max(0, n - CONTEXT_MESSAGES)
+        for index in range(staIdx, n):
+            srcMsg = self.srcMessages[index]
+            if index == (n-FACT_CHECK_MESSAGES):
+                convo += "## Begin statements to fact-check. DO fact-check below\n"
+            convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
+
+        return self.genCompletion(wrap, self.instructionsForFactCheck, convo, tools_user_data)
 

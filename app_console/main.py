@@ -262,6 +262,9 @@ def printFactCheck(fcRepliesStr: str) -> None:
                 logmsg("Fact-check not applicable")
                 continue
 
+            if len(outStr) > 0:
+                outStr += "\n"
+
             corr = reply.get('correctness') or 0
             true_icon = "✅"
             false_icon = "❌"

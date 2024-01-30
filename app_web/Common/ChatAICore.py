@@ -399,9 +399,9 @@ class MsgThread:
         for msg in self.messages:
             self.judge.AddMessage(msg)
 
-    def gen_fact_check(self):
+    def gen_fact_check(self, tools_user_data=None):
         if self.judge:
-            return self.judge.GenFactCheck(self.wrap)
+            return self.judge.GenFactCheck(self.wrap, tools_user_data)
         else:
             return None
 
