@@ -336,23 +336,27 @@ def get_replies():
 def get_addendums():
     # Do we have fact-checks to return
     if ('generate_fchecks' not in session) or not session['generate_fchecks']:
-        return jsonify({'addendums': [], 'message': 'No pending fact-cheks', 'final': True}), 200
+        return jsonify({'addendums': [], 'message': 'No pending fact-checks', 'final': True}), 200
 
     del session['generate_fchecks']
 
     # We get the fact checks directly in JSON format
     fc_str = sess_get_msg_thread().gen_fact_check(tools_user_data=session.sid)
     if fc_str is None:
-        return jsonify({'addendums': [], 'message': 'No pending fact-cheks', 'final': True}), 200
+        return jsonify({'addendums': [], 'message': 'No pending fact-checks', 'final': True}), 200
 
     logmsg(f"Got fact-checks: {fc_str}")
 
-    fc = json.loads(fc_str)
+    try:
+        fc = json.loads(fc_str)
+    except ValueError as e:
+        logerr(f"Error parsing fact-checks: {e}")
+        return jsonify({'addendums': [], 'message': 'Error parsing fact-checks', 'final': True}), 200
 
     logmsg(f"FC JSON {fc}")
 
     #if not fc['applicable']:
-    #    return jsonify({'addendums': [], 'message': 'No pending fact-cheks', 'final': True}), 200
+    #    return jsonify({'addendums': [], 'message': 'No pending fact-checks', 'final': True}), 200
 
     return jsonify({'addendums': [fc], 'final': True}), 200
 

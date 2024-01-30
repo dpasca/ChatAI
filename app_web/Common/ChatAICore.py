@@ -401,7 +401,11 @@ class MsgThread:
 
     def gen_fact_check(self, tools_user_data=None):
         if self.judge:
-            return self.judge.GenFactCheck(self.wrap, tools_user_data)
+            fc = self.judge.GenFactCheck(self.wrap, tools_user_data)
+            # Find and remove ```json at start and ``` at end
+            if fc.startswith("```json"): fc = fc[7:]
+            if fc.endswith("```"): fc = fc[:-3]
+            return fc
         else:
             return None
 
