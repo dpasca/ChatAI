@@ -258,6 +258,20 @@ def printFactCheck(fcRepliesStr: str) -> None:
 
         outStr = ""
         for reply in fcReplies['fact_check']:
+            corr = reply.get('correctness') or 0
+            red_dot = "🔴"
+            orange_dot = "🟠"
+            yellow_dot = "🟡"
+            green_dot = "🟢"
+            outStr += "> "
+            if   corr == 0: outStr += red_dot + red_dot + red_dot
+            elif corr == 1: outStr += orange_dot + orange_dot
+            elif corr == 2: outStr += yellow_dot
+            elif corr == 3: outStr += green_dot
+            elif corr == 4: outStr += green_dot + green_dot
+            elif corr == 5: outStr += green_dot + green_dot + green_dot
+            outStr += "\n"
+
             rebuttal = reply.get('rebuttal') or ''
             links = reply.get('links') or []
             if rebuttal or links:
