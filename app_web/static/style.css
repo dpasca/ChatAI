@@ -80,6 +80,25 @@ a {
     position: relative;
 }
 
+.fact-check-collapsed {
+    background-color: transparent;
+    font-size: medium;
+    padding: 0px;
+    border: none;
+    text-align: right;
+    margin-top: -1.5em;
+    padding-right: 0.3em;
+}
+
+.fact-check-expanded {
+    background-color: #b8a0b8e0; /* Lighter shade of gray */
+    color: #324; /* Darker text color for contrast */
+    padding: 7px;
+    border: 2px solid #17102040; /* Lighter border color */
+    border-radius: 10px;
+    position: relative;
+}
+
 #user-input {
     height: 5em;
     margin-top: 0.3em;

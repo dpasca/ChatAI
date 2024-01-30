@@ -135,14 +135,36 @@ function appendFactCheck(fcheck) {
     const reformattedContent = reformatIndentation(fullText);
     const htmlContent = md.render(reformattedContent);
 
-    // Create a new div for the fact-check message
-    var addendumDiv = document.createElement('div');
-    addendumDiv.className = 'addendum-message';
-    // Add the fact-check message to the div
-    addendumDiv.innerHTML = `<div class="markdown-content">${htmlContent}</div>`;
+    fcPreview = fullText.split(' ').slice(0, 5).join(' ');
+    fcPreview += (fullText.split(' ').length > 5) ? '...' : '';
+
+    // Create a new div for the collapsed state
+    var collapsedDiv = document.createElement('div');
+    collapsedDiv.className = 'fact-check-collapsed';
+    collapsedDiv.innerHTML = `<span class="fact-check-icon">${fullText.charAt(0)}</span>`;
+    messageDiv.appendChild(collapsedDiv);
+
+    // Create a new div for the expanded state
+    var expandedDiv = document.createElement('div');
+    expandedDiv.className = 'fact-check-expanded addendum-message';
+    expandedDiv.style.display = 'none'; // Initially hide the expanded state
+    expandedDiv.innerHTML = `<div class="markdown-content">${htmlContent}</div>`;
+    messageDiv.appendChild(expandedDiv);
+
+    collapsedDiv.onclick = function() {
+        // Toggle visibility of the collapsed and expanded states on click
+        collapsedDiv.style.display = 'none';
+        expandedDiv.style.display = 'block';
+    };
+
+    expandedDiv.onclick = function() {
+        // Toggle visibility of the collapsed and expanded states on click
+        collapsedDiv.style.display = 'block';
+        expandedDiv.style.display = 'none';
+    };
 
     // Append the fact-check div to the message div
-    messageDiv.appendChild(addendumDiv);
+    //messageDiv.appendChild(addendumDiv);
 }
 
 // Global variable to store a reference to the waiting message element and its state
