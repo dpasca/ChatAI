@@ -258,18 +258,20 @@ def printFactCheck(fcRepliesStr: str) -> None:
 
         outStr = ""
         for reply in fcReplies['fact_check']:
+            if reply.get('applicable') == False:
+                logmsg("Fact-check not applicable")
+                continue
+
             corr = reply.get('correctness') or 0
-            red_dot = "🔴"
-            orange_dot = "🟠"
-            yellow_dot = "🟡"
-            green_dot = "🟢"
+            true_icon = "✅"
+            false_icon = "❌"
             outStr += "> "
-            if   corr == 0: outStr += red_dot + red_dot + red_dot
-            elif corr == 1: outStr += orange_dot + orange_dot
-            elif corr == 2: outStr += yellow_dot
-            elif corr == 3: outStr += green_dot
-            elif corr == 4: outStr += green_dot + green_dot
-            elif corr == 5: outStr += green_dot + green_dot + green_dot
+            if   corr == 0: outStr += false_icon
+            elif corr == 1: outStr += false_icon
+            elif corr == 2: outStr += false_icon
+            elif corr == 3: outStr += true_icon
+            elif corr == 4: outStr += true_icon
+            elif corr == 5: outStr += true_icon
             outStr += "\n"
 
             rebuttal = reply.get('rebuttal') or ''
@@ -280,7 +282,8 @@ def printFactCheck(fcRepliesStr: str) -> None:
                     readableLink = link if not link.startswith("https://") else link[len("https://"):]
                     outStr += f"> - [{readableLink}]({link})\n"
 
-        console.print(Markdown(outStr))
+        if outStr:
+            console.print(Markdown(outStr))
     except json.JSONDecodeError:
         logerr("Error decoding JSON response")
         console.print(Markdown("> " + fcRepliesStr))
