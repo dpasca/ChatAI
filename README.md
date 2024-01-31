@@ -21,13 +21,25 @@ See commits for other contributors.
 - Support for PDF knowledge files (need to upload manually to OpenAI assistant settings)
 - Code syntax highlighting and LaTeX rendering
 
+## Notes about Fact-Checking
+
+The **main assistant is currently not aware of the fact-checking**.
+
+This is a design choice to keep things simple in terms of user experience. Feedback from one AI
+to another is definitely important, but I'd rather implement (in the future) this kind of back-and-forth self-correction
+in a thread away from the user.
+
+Fact-checking in web app runs in background, it takes some time to complete, but does not hang the interface.
+
+For the console app, fact-checking is currently done in the main thread, so it will hang the interface until it's done.
+
 ## Quick start (console app)
 
 <img src="docs/agentchat_sshot_02.webp" width="500">
 
 ### Setup
 
-It's suggested to use a virtual environment for Python.
+It's suggested to use a virtual environment for Python (`conda` or `venv`).
 
 1. Set `OPENAI_API_KEY` (get it from the OpenAI dashboard) in your
 environment variables, or in a `.env` file in the `app_console` directory
