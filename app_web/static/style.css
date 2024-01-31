@@ -82,21 +82,35 @@ a {
 
 .fact-check-collapsed {
     background-color: transparent;
-    font-size: medium;
-    padding: 0px;
+    padding: 0;
     border: none;
     text-align: right;
-    margin-top: -1.5em;
-    padding-right: 0.3em;
+    cursor: pointer;
+    display: block; /* Full width for easier clicking */
+    margin-top: -1.5em; /* Adjust as needed */
+}
+
+.fact-check-icon.flash {
+    animation: flash 0.5s linear 2;
+    cursor: pointer;
+    padding: 5px; /* Larger clickable area */
+    display: inline; /* Inline for text alignment */
 }
 
 .fact-check-expanded {
-    background-color: #b8a0b8e0; /* Lighter shade of gray */
-    color: #324; /* Darker text color for contrast */
+    background-color: #b8a0b8e0;
+    color: #324;
     padding: 7px;
-    border: 2px solid #17102040; /* Lighter border color */
+    border: 2px solid #17102040;
     border-radius: 10px;
     position: relative;
+    display: none; /* Initially hidden */
+}
+
+@keyframes flash {
+    0% { opacity: 1; }
+    50% { opacity: 0; }
+    100% { opacity: 1; }
 }
 
 #user-input {

@@ -89,6 +89,36 @@ function makeMDLink(link) {
     return `[${makeDispLink(link)}](${link})`;
 }
 
+//
+const FC_COLLAPSE_POSTFIX = '_fc_coll';
+const FC_EXPAND_POSTFIX = '_fc_expa';
+
+// Call this in the HTML file at document.addEventListener('DOMContentLoaded', ...)
+function setupFactCheckEventDelegation() {
+    var chatBox = document.getElementById('chatbox');
+    if (!chatBox) {
+        console.error('Chatbox not found.');
+        return;
+    }
+
+    chatBox.addEventListener('click', function(e) {
+        // Check if the click is on a fact-check icon or its container
+        var target = e.target;
+        var isFactCheckIcon = target.classList.contains('fact-check-icon') || 
+                              target.parentElement.classList.contains('fact-check-collapsed');
+
+        if (isFactCheckIcon) {
+            var factCheckId = target.closest('.fact-check-collapsed').id;
+            var expandedDivId = factCheckId.replace(FC_COLLAPSE_POSTFIX, FC_EXPAND_POSTFIX);
+            var expandedDiv = document.getElementById(expandedDivId);
+
+            if (expandedDiv) {
+                expandedDiv.style.display = expandedDiv.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+    });
+}
+
 function appendFactCheck(fcheck) {
     // Find the message by the ID
     var messageDiv = document.getElementById(fcheck.msg_id);
@@ -135,36 +165,30 @@ function appendFactCheck(fcheck) {
     const reformattedContent = reformatIndentation(fullText);
     const htmlContent = md.render(reformattedContent);
 
-    fcPreview = fullText.split(' ').slice(0, 5).join(' ');
-    fcPreview += (fullText.split(' ').length > 5) ? '...' : '';
+    // Unique ID for the collapsed and expanded divs
+    let collapsedDivId = fcheck.msg_id + FC_COLLAPSE_POSTFIX;
+    let expandedDivId = fcheck.msg_id + FC_EXPAND_POSTFIX;
 
-    // Create a new div for the collapsed state
-    var collapsedDiv = document.createElement('div');
-    collapsedDiv.className = 'fact-check-collapsed';
-    collapsedDiv.innerHTML = `<span class="fact-check-icon">${fullText.charAt(0)}</span>`;
-    messageDiv.appendChild(collapsedDiv);
+    // Check if the collapsedDiv already exists, create if not
+    let collapsedDiv = document.getElementById(collapsedDivId);
+    if (!collapsedDiv) {
+        collapsedDiv = document.createElement('div');
+        collapsedDiv.id = collapsedDivId;
+        collapsedDiv.className = 'fact-check-collapsed';
+        collapsedDiv.innerHTML = `<span class="fact-check-icon flash">${fullText.charAt(0)}</span>`;
+        messageDiv.appendChild(collapsedDiv);
+    }
 
-    // Create a new div for the expanded state
-    var expandedDiv = document.createElement('div');
-    expandedDiv.className = 'fact-check-expanded addendum-message';
-    expandedDiv.style.display = 'none'; // Initially hide the expanded state
-    expandedDiv.innerHTML = `<div class="markdown-content">${htmlContent}</div>`;
-    messageDiv.appendChild(expandedDiv);
-
-    collapsedDiv.onclick = function() {
-        // Toggle visibility of the collapsed and expanded states on click
-        collapsedDiv.style.display = 'none';
-        expandedDiv.style.display = 'block';
-    };
-
-    expandedDiv.onclick = function() {
-        // Toggle visibility of the collapsed and expanded states on click
-        collapsedDiv.style.display = 'block';
+    // Check if the expandedDiv already exists, create if not
+    let expandedDiv = document.getElementById(expandedDivId);
+    if (!expandedDiv) {
+        expandedDiv = document.createElement('div');
+        expandedDiv.id = expandedDivId;
+        expandedDiv.className = 'fact-check-expanded addendum-message';
         expandedDiv.style.display = 'none';
-    };
-
-    // Append the fact-check div to the message div
-    //messageDiv.appendChild(addendumDiv);
+        expandedDiv.innerHTML = `<div class="markdown-content">${htmlContent}</div>`;
+        messageDiv.appendChild(expandedDiv);
+    }
 }
 
 // Global variable to store a reference to the waiting message element and its state
@@ -332,7 +356,7 @@ function pollForAddendums() {
         for (let addendum of data.addendums) {
             // Check if the addendim has fact-check array
             if (addendum.hasOwnProperty('fact_check') && addendum.fact_check.length > 0) {
-                console.log("Found fact-checks:", addendum.fact_check);
+                //console.log("Found fact-checks:", addendum.fact_check);
                 for (let fcheck of addendum.fact_check) {
                     if (fcheck.applicable) {
                         appendFactCheck(fcheck);
