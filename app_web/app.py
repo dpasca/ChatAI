@@ -245,6 +245,13 @@ def clear_chat():
 
     return redirect(url_for('index'))
 
+@app.route('/reset_expired_chat', methods=['POST'])
+def reset_expired_chat():
+    # Force-create a new thread
+    createThread(force_new=True)
+
+    return redirect(url_for('index'))
+
 #===============================================================================
 def make_file_url(file_id, simple_name):
     strippable_prefix = "file-"
@@ -324,6 +331,9 @@ def get_replies():
                 logmsg(f"Reached end of replies")
                 sess_set_replies(TaskQueue())
                 return jsonify({'replies': send_replies, 'final': True}), 200
+            elif reply == 'ERR_THREAD_EXPIRED':
+                # Return an error for expired
+                return jsonify({'replies': send_replies, 'final': True, 'error': reply}), 500
             else:
                 sess_get_msg_thread().add_message(reply)
                 send_replies.append(reply)
@@ -388,6 +398,11 @@ def send_message():
 
         # Mark the completion of message processing
         replies = sess_get_replies(session_id)
+
+        if ret_val == ChatAICore.ERR_THREAD_EXPIRED:
+            with replies.lock:
+                replies.put('ERR_THREAD_EXPIRED')
+
         with replies.lock:
             replies.put('END')
 

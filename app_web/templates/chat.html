@@ -29,6 +29,7 @@
           </div>
           <!-- Add this button above your input field -->
           <button id="erase-button" class="btn btn-warning btn-sm">Erase Chat</button>
+          <button id="reset-expired-chat" class="btc btn-danger btn-sm">Reset Expired Chat</button>
           <div class="input-group">
             <textarea class="form-control" id="user-input" placeholder="Type a message..."></textarea>
             <div class="input-group-append">
@@ -61,6 +62,8 @@
 
               // Erase button hidden by default
               document.getElementById('erase-button').style.display = 'none';
+              // Reset Expired Chat button hidden by default
+              document.getElementById('reset-expired-chat').style.display = 'none';
 
               // Event delegation for fact-checks
               setupFactCheckEventDelegation();
@@ -150,6 +153,16 @@
               $('#chatbox').html('');
               // Hide the erase button
               document.getElementById('erase-button').style.display = 'none';
+            });
+        });
+        $('#reset-expired-chat').click(function () {
+          fetch('/reset_expired_chat', { method: 'POST' })
+            .then(function () {
+              $('#chatbox').html('');
+              // Hide the reset button
+              document.getElementById('reset-expired-chat').style.display = 'none';
+            document.getElementById('user-input').disabled = false; // Enable input box
+            document.getElementById('send-button').disabled = false; // Enable send button
             });
         });
 
