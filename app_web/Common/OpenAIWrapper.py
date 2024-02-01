@@ -5,40 +5,47 @@
 # Desc: A simple wrapper, since Assistant API is in beta
 #==================================================================
 from openai import OpenAI
-from typing import Tuple
+from typing import Tuple, List, Dict, Any
+from pydantic import BaseModel
 
 #==================================================================
+class AssistantParams(BaseModel):
+    name: str
+    instructions: str
+    tools: List[Dict[str, Any]]
+    model: str
+
 class OpenAIWrapper:
     def __init__(self, api_key):
         self.client = OpenAI(api_key=api_key)
 
     #==================================================================
     # Assistants
-    def CreateAssistant(self, name, instructions, tools, model):
+    def CreateAssistant(self, params: AssistantParams):
         return self.client.beta.assistants.create(
-            name=name,
-            instructions=instructions,
-            tools=tools,
-            model=model)
+            name=params.name,
+            instructions=params.instructions,
+            tools=params.tools,
+            model=params.model)
 
-    def UpdateAssistant(self, assistant_id, instructions, tools, model):
+    def UpdateAssistant(self, assistant_id, params: AssistantParams):
         return self.client.beta.assistants.update(
             assistant_id=assistant_id,
-            instructions=instructions,
-            tools=tools,
-            model=model)
+            instructions=params.instructions,
+            tools=params.tools,
+            model=params.model)
 
     def ListAssistants(self):
         return self.client.beta.assistants.list()
 
     # Helper to create or update an assistant
     # Returns assistant, was_created
-    def CreateOrUpdateAssistant(self, name, instructions, tools, model) -> Tuple[object, bool]:
+    def CreateOrUpdateAssistant(self, params: AssistantParams) -> Tuple[object, bool]:
         assists = self.ListAssistants()
         for assist in assists:
-            if assist.name == name:
-                return self.UpdateAssistant(assist.id, instructions, tools, model), False
-        return self.CreateAssistant(name, instructions, tools, model), True
+            if assist.name == params.name:
+                return self.UpdateAssistant(assist.id, params), False
+        return self.CreateAssistant(params), True
 
     #==== Threads
     def CreateThread(self):

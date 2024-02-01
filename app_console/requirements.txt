@@ -5,3 +5,4 @@ pytz
 prompt_toolkit
 rich
 rich-pixels
+pydantic

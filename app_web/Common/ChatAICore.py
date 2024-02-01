@@ -318,11 +318,12 @@ def create_assistant(
     codename = config["assistant_codename"]
 
     # Create or update the assistant
-    assist, was_created = wrap.CreateOrUpdateAssistant(
+    params = OpenAIWrapper.AssistantParams(
         name=codename,
         instructions=full_instructions,
         tools=tools,
         model=config["model_version"])
+    assist, was_created = wrap.CreateOrUpdateAssistant(params)
 
     if was_created:
         logmsg(f"Created new assistant with name {codename}")
@@ -334,26 +335,29 @@ def create_assistant(
 # Manage an OpenAI thread
 # Starts loading a thread, keeps a local version of the messages
 import json
-#from . import ConvoJudge
+from pydantic import BaseModel
+from typing import List, Optional
+#from .OpenAIWrapper import OpenAIWrapper
 from .ConvoJudge import ConvoJudge
 
-class MsgThread:
-    # Constructor with thread_id
-    def __init__(self, wrap, thread_id):
-        self.wrap = wrap
-        self.thread_id = thread_id
-        self.messages = []
-        self.judge = None
-    
-    @classmethod
-    def create_thread(cls, wrap):
-        oai_thread = wrap.CreateThread()
-        return cls(wrap, oai_thread.id)
+class MsgThread(BaseModel):
+    wrap: OpenAIWrapper
+    thread_id: str
+    messages: List[str] = []
+    judge: Optional[ConvoJudge] = None
+
+    class Config:
+        arbitrary_types_allowed = True
 
     @classmethod
-    def from_thread_id(cls, wrap, thread_id):
+    def create_thread(cls, wrap: OpenAIWrapper):
+        oai_thread = wrap.CreateThread()
+        return cls(wrap=wrap, thread_id=oai_thread.id)
+
+    @classmethod
+    def from_thread_id(cls, wrap: OpenAIWrapper, thread_id: str):
         wrap.RetrieveThread(thread_id)
-        return cls(wrap, thread_id)
+        return cls(wrap=wrap, thread_id=thread_id)
 
     def to_json(self):
         # Convert messages to a serializable format
