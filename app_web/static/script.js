@@ -335,11 +335,15 @@ function pollForReplies(assistant_name) {
     })
     .catch(error => {
         console.error('There was a problem with the fetch operation:', error);
-        // TODO: have an error message appear in the chat
+
+        //if (data.error === 'ERR_THREAD_EXPIRED') {
+            document.getElementById('reset-expired-chat').style.display = 'block';
+            document.getElementById('erase-button').style.display = 'none';
+        //}
 
         removeWaitingAssistMessage(); // Remove the waiting message
-        document.getElementById('user-input').disabled = false; // Enable input box
-        document.getElementById('send-button').disabled = false; // Enable send button
+        document.getElementById('user-input').disabled = true; // Disable input box
+        document.getElementById('send-button').disabled = true; // Disable send button
     });
 }
 
