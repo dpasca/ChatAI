@@ -140,14 +140,24 @@ body.dark-theme .ai-message::before {
     display: inline; /* Inline for text alignment */
 }
 
+/* Style for expanded fact-check in light theme */
 .fact-check-expanded {
-    background-color: #b8a0b8e0;
-    color: #324;
-    padding: 7px;
-    border: 2px solid #17102040;
-    border-radius: 10px;
-    position: relative;
-    display: none; /* Initially hidden */
+    background-color: #e7e7e7; /* Light background */
+    color: #333; /* Dark text for contrast */
+    padding: 10px;
+    border: 1px solid #ddd; /* Subtle border */
+    border-radius: 5px; /* Rounded corners */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Soft shadow for depth */
+    margin-bottom: 10px; /* Spacing from other elements */
+}
+
+/* Style for expanded fact-check in dark theme */
+body.dark-theme .fact-check-expanded {
+    background-color: #141414; /* Darker background for dark theme */
+    color: #e0e0e0; /* Light text for dark theme */
+    padding: 10px;
+    border: 1px solid #444; /* Darker border for dark theme */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5); /* More pronounced shadow for dark theme */
 }
 
 @keyframes flash {
