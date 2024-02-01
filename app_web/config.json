@@ -7,6 +7,8 @@
     "enable_retrieval": true,
     "assistant_name": "Mei",
     "app_title" : "Chat with Mei",
+    "navbar_title" : "NEWTYPE K.K.",
+    "navbar_title_url" : "https://newtypekk.com/",
     "assistant_avatar": "assistant_avatar.jpg",
     "assistant_codename": "mei_0005",
     "assistant_instructions": "assistant_instructions.md"
