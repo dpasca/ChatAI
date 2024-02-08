@@ -20,10 +20,17 @@
     <title>{{ app_title }}</title>
   </head>
   <body>
-    <nav class="navbar fixed-top navbar-expand-lg navbar-dark bg-dark">
+    <nav class="navbar fixed-top navbar-expand-lg" id="main-navbar">
       <div class="container-fluid">
         <!-- Content before the theme toggle, like a brand name or navigation links -->
-        <a class="navbar-brand" href="{{ navbar_title_url }}">{{ navbar_title }}</a>
+        <div class="navbar">
+          <img src="/static/{{ assistant_avatar }}" alt="Assistant Avatar" width="30" height="30">
+          <h1>{{ app_title }}</h1>
+          &ndash;
+          <a href="{{ navbar_title_url }}">
+            {{ navbar_title }}
+          </a>
+        </div>
 
         <!-- Theme Toggle Icon on the right -->
         <div class="d-flex">
@@ -41,10 +48,6 @@
     <div class="container">
       <div class="row">
         <div class="col-md-8 offset-md-2">
-          <div class="header">
-            <img src="/static/{{ assistant_avatar }}" alt="Assistant Avatar">
-            <h1>{{ app_title }}</h1>
-          </div>
           <div id="chatbox">
             <!-- Chat messages will be added here -->
           </div>
@@ -219,37 +222,67 @@
       });
     </script>
     <script>
+      window.addEventListener('load', function() {
+        var navbarHeight = document.querySelector('.navbar').offsetHeight;
+        navbarHeight += 8; // Add some padding
+        document.body.style.paddingTop = navbarHeight + 'px';
+      });
+
       document.addEventListener('DOMContentLoaded', function () {
-        var themeToggleCheckbox = document.getElementById('theme-toggle');
-        var moonIcon = document.querySelector('.bi-moon-stars-fill');
-        var sunIcon = document.querySelector('.bi-sun-fill');
+          // Set initial theme based on localStorage or default
+          initializeTheme();
 
-        // Initialize theme based on user's previous choice
-        if (localStorage.getItem('theme') === 'dark' || !localStorage.getItem('theme')) {
-          document.body.classList.add('dark-theme');
-          themeToggleCheckbox.checked = true;
-          moonIcon.style.display = 'none';
-          sunIcon.style.display = 'inline-block';
-        } else {
-          document.body.classList.remove('dark-theme');
-          themeToggleCheckbox.checked = false;
-          moonIcon.style.display = 'inline-block';
-          sunIcon.style.display = 'none';
-        }
+          // Explicitly attach an event listener to the theme toggle
+          document.getElementById('theme-toggle').addEventListener('change', toggleTheme);
+      });
 
-        // Toggle theme and icon display on change
-        themeToggleCheckbox.addEventListener('change', function() {
-          document.body.classList.toggle('dark-theme');
-          if (document.body.classList.contains('dark-theme')) {
-            moonIcon.style.display = 'none';
-            sunIcon.style.display = 'inline-block';
-            localStorage.setItem('theme', 'dark');
+      function initializeTheme() {
+          const isDarkTheme = localStorage.getItem('theme') === 'dark' || !localStorage.getItem('theme');
+          // Apply initial theme state without toggling
+          applyTheme(isDarkTheme);
+      }
+
+      function toggleTheme() {
+          const isDarkTheme = document.body.classList.contains('dark-theme');
+          // Toggle theme to the opposite state
+          applyTheme(!isDarkTheme);
+      }
+
+      function applyTheme(isDarkTheme) {
+          const body = document.body;
+          const themeToggleCheckbox = document.getElementById('theme-toggle');
+          const navbar = document.getElementById('main-navbar');
+          const moonIcon = document.querySelector('.bi-moon-stars-fill');
+          const sunIcon = document.querySelector('.bi-sun-fill');
+
+          // Apply theme class on body
+          body.classList.toggle('dark-theme', isDarkTheme);
+
+          // Update navbar classes for the theme
+          if (isDarkTheme) {
+              navbar.classList.remove('navbar-light', 'bg-light');
+              navbar.classList.add('navbar-dark', 'bg-dark');
           } else {
-            moonIcon.style.display = 'inline-block';
-            sunIcon.style.display = 'none';
-            localStorage.setItem('theme', 'light');
+              navbar.classList.remove('navbar-dark', 'bg-dark');
+              navbar.classList.add('navbar-light', 'bg-light');
           }
-        });
+
+          // Update checkbox based on current theme
+          themeToggleCheckbox.checked = isDarkTheme;
+
+          // Update icons visibility based on theme
+          moonIcon.style.display = isDarkTheme ? 'none' : 'inline-block';
+          sunIcon.style.display = isDarkTheme ? 'inline-block' : 'none';
+
+          // Save theme preference
+          localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
+      }
+
+
+      window.addEventListener('load', function() {
+        var navbarHeight = document.querySelector('.navbar').offsetHeight;
+        navbarHeight += 8; // Add some padding
+        document.body.style.paddingTop = navbarHeight + 'px';
       });
     </script>
   </body>

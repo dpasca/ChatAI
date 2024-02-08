@@ -18,32 +18,29 @@ body.dark-theme b, body.dark-theme strong {
 }
 
 .navbar {
-    padding: 0.5rem 1rem; /* Adjust the padding as needed */
-}
-
-a {
-    color: #2060e0;
-    text-decoration: none;
+    color: inherit;
+    padding: 0.5rem 1rem;
     background-color: transparent;
 }
 
-.header {
-    font-size: medium;
+.navbar h1 {
+    color: inherit;
+    font-size: 1.5rem;
+    margin: 0;
+    padding-left: 10px;
+    padding-right: 10px;
 }
 
-.header img {
-    vertical-align: bottom; /* Aligns the bottom of the image with the line */
-    height: 50px; 
-    width: 50px; 
-    margin-right: 10px;
+.navbar a {
+    padding-left: 10px;
+    padding-left: 10px;
+    padding-right: 10px;
 }
 
-.header h1 {
-    font-size: 2.0rem;
-    font-weight: bold;
-    vertical-align: bottom; /* Aligns the bottom of the text with the line */
-    display: inline; /* Ensures the header is in line with the image */
-    margin: 0; /* Removes default margin */
+a {
+    color: #e08d20;
+    /*text-decoration: none;*/
+    background-color: transparent;
 }
 
 .ai-message {
