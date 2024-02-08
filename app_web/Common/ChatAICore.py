@@ -397,7 +397,7 @@ class MsgThread(BaseModel):
             self.messages.extend(new_messages)
 
         return len(new_oai_messages)
-    
+ 
     def create_judge(self, model, temperature):
         self.judge = ConvoJudge(model=model, temperature=temperature)
         for msg in self.messages:
@@ -407,8 +407,11 @@ class MsgThread(BaseModel):
         if self.judge:
             fc = self.judge.GenFactCheck(self.wrap, tools_user_data)
             # Find and remove ```json at start and ``` at end
+            #saved_fc = fc
             if fc.startswith("```json"): fc = fc[7:]
             if fc.endswith("```"): fc = fc[:-3]
+            #if saved_fc != fc:
+            #    logmsg(f"Stripped ``` from fact check")
             return fc
         else:
             return None

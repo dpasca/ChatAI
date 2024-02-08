@@ -75,13 +75,19 @@ You MUST reply in JSON format, no exceptions. Example:
       "applicable": <true/false>,
       "correctness": <degree of correctness, 0 to 5>
       "rebuttal": <extremely short rebuttal, inclusive of references>,
-      "links": <list of links to sources>,
+      "links": [
+        {
+          "title": <title of the link>,
+          "url": <url of the link>
+        }
+      ]
     }
   ]
 }
 ---
 - Do not produce "rebuttal" or "links" if "applicable" is false.
 - Any URL link must exist and must be valid.
+- Generate only 1 full piece of JSON output.
 """
 
     def AddMessage(self, srcMsg):

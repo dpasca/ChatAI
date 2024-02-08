@@ -80,13 +80,16 @@ function appendMessage(message, assistant_name='') {
     chatBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
 }
 
-function makeDispLink(link) {
-    // Display link cuts https:// at the beginning
-    return (link.startsWith('https://')) ? link.slice(8) : link;
+function makeDispLink(url) {
+    // Cut https:// at the beginning
+    return (url.startsWith('https://')) ? url.slice(8) : url;
 }
-function makeMDLink(link) {
+function makeMDLink(title, url) {
     // Make a markdown link
-    return `[${makeDispLink(link)}](${link})`;
+    if (title !== '') {
+        title = makeDispLink(title);
+    }
+    return `[${title}](${url})`;
 }
 
 //
@@ -154,7 +157,12 @@ function appendFactCheck(fcheck) {
         }
     }
     for (let link of fcheck.links) {
-        fullText += `\n - ${makeMDLink(link)}\n`;
+        // Ensure that we have valid links (fields exist), otherwise skip
+        if (!link.hasOwnProperty('title') || !link.hasOwnProperty('url')) {
+            console.error("Invalid link:", link);
+            continue;
+        }
+        fullText += `\n - ${makeMDLink(link.title, link.url)}\n`;
     }
     // Return if there is no text to display
     if (fullText === "") return;
