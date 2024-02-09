@@ -22,14 +22,14 @@
   <body>
     <nav class="navbar fixed-top navbar-expand-lg" id="main-navbar">
       <div class="container-fluid">
-        <!-- Content before the theme toggle, like a brand name or navigation links -->
+        <!-- Content before the theme toggle, like a dev name or navigation links -->
         <div class="navbar">
-          <img src="/static/{{ assistant_avatar }}" alt="Assistant Avatar" width="30" height="30">
+          <img src="/static/{{ assistant_avatar }}" class="avatar" alt="Assistant Avatar">
           <h1>{{ app_title }}</h1>
           &ndash;
-          <a href="{{ navbar_title_url }}">
-            {{ navbar_title }}
-          </a>
+          <div class="navbar-dev">
+            <a href="{{ navbar_dev_url }}">{{ navbar_dev }}</a>
+          </div>
         </div>
 
         <!-- Theme Toggle Icon on the right -->

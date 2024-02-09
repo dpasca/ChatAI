@@ -289,8 +289,8 @@ def index():
     return render_template(
                 'chat.html',
                 app_title=config["app_title"],
-                navbar_title=config["navbar_title"],
-                navbar_title_url=config["navbar_title_url"],
+                navbar_dev=config["navbar_dev"],
+                navbar_dev_url=config["navbar_dev_url"],
                 assistant_name=config["assistant_name"],
                 assistant_avatar=config["assistant_avatar"],
                 app_version=config["app_version"])
