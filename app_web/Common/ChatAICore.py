@@ -14,7 +14,7 @@ from . import OpenAIWrapper
 
 # Return codes
 ERR_THREAD_EXPIRED = "ERR_THREAD_EXPIRED"
-ERR_THREAD_TIMEOUT = "ERR_THREAD_TIMEOUT"
+ERR_THREAD_IN_USE = "ERR_THREAD_IN_USE"
 ERR_RUN_FAILED = "ERR_RUN_FAILED"
 SUCCESS = "SUCCESS"
 
@@ -154,37 +154,31 @@ def get_thread_status(wrap, thread_id):
 
 #==================================================================
 def wait_to_use_thread(wrap, thread_id) -> str:
-    for i in range(5):
+    """Wait for the thread to become available.
+       Return SUCCESS if available (not locked by an active run)."""
+    for i in range(100):
         status, run_id = get_thread_status(wrap, thread_id)
         if status is None:
             return SUCCESS
-        logmsg(f"Thread status from last run: {status}")
-
-        # If it's expired, then we just can't use it anymore
-        if status == "expired":
-            logerr("Thread expired, cannot use it anymore")
-            return ERR_THREAD_EXPIRED
+        logwarn(f"Thread status from last run: {status}")
 
         # Acceptable statuses to continue
-        if status in ["completed", "failed", "cancelled"]:
-            logmsg("Thread is available")
+        if status in ["completed", "failed", "cancelled", "expired"]:
             return SUCCESS
 
-        # Waitable states
+        # Statuses that require waiting
         if status in ["queued", "in_progress", "cancelling"]:
             logmsg("Waiting for thread to become available...")
 
-        logmsg("Status in required action: " + str(status == "requires_action"))
-
-        # States that we cannot handle at this point
-        if status in ["requires_action"]:
+        # Statuses that we cannot handle at this point
+        if status == "requires_action":
             logerr("Thread requires action, but we don't know what to do. Cancelling...")
             cancel_thread(wrap, run_id=run_id, thread_id=thread_id)
             continue
 
         sleepForAPI()
 
-    return ERR_THREAD_TIMEOUT
+    return ERR_THREAD_IN_USE
 
 #==================================================================
 # Handle the required action (function calling)
@@ -252,6 +246,7 @@ def SendUserMessage(
         tools_user_data=None) -> str:
 
     if (ret := wait_to_use_thread(wrap, thread_id)) != SUCCESS:
+        logerr(f"Thread not available: {ret}, skipping")
         return ret
 
     run = wrap.CreateRun(thread_id=thread_id, assistant_id=assistant_id)
