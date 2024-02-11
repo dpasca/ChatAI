@@ -5,6 +5,7 @@
 # Description: A judge for conversations
 #==================================================================
 
+import re
 import json
 from .logger import *
 from .OpenAIWrapper import OpenAIWrapper
@@ -16,15 +17,16 @@ class ConvoJudge:
         self.model = model
         self.temperature = temperature
 
-        CONVO_DESC = """
-You will receive a conversation between User and Assistant (a thid party assistant, not you!)
-in the format:
-- SUMMARY (optional): [Summary of the conversation so far]
-- Message: <id> by <role>:\n<content>
-- Message: ...
+        def make_header(role_desc):
+            return f"""
+You are a {role_desc} tasked with evaluating statements from a conversation between
+a User and an Assistant (a third-party assistant, not you). The conversation format
+is as follows:
+- If present, a summary of the conversation.
+- Messages identified by an ID and the role of the sender, followed by the message content.
 """
 
-        self.instructionsForSummary = CONVO_DESC + """
+        self.instructionsForSummary = make_header("summarizer") + """
 Output a synthesized summary of the conversation in less than 100 words.
 Do not prefix with "Summary:" or anything like that, it's implied. 
 Output must be optimized for a LLM, human-readability is not important.
@@ -34,7 +36,7 @@ Rules for output:
 2. If large data blocks, condense to essential information only.
 """
 
-        self.instructionsForCritique = CONVO_DESC + """
+        self.instructionsForCritique = make_header("critc") + """
 Assistant is a mind-reading AI based on an LLM. Its goal is to provide total delegation
 of the tasks required towards the user's goal.
 
@@ -49,8 +51,8 @@ Reply in the following format:
 }
 """
 
-        self.instructionsForFactCheck = CONVO_DESC + """
-You are a fact-checker that performs in-depth research on
+        self.instructionsForFactCheck = make_header("fact-checker") + """
+Performs in-depth research on
 any given statement of the conversation described above.
 Provide a rebuttal with details, clarifications, references,
 opposing views and counter-arguments.
@@ -64,9 +66,13 @@ Ignore checking on political topics.
 Beware of the fact that the assistant may have access to information
 may not be aware of, such as the user's background, location, etc.
 
-## Output format
-You MUST reply in JSON format, no exceptions. Example:
----
+- You must reply with one valid JSON object.
+- Place all fact-checking responses in one "fact_checks" array of objects.
+- Do not include any explanation or commentary in your response.
+- Ensure all provided URLs are valid and accessible.
+
+## Expected JSON structure
+
 {
   "fact_check": [
     {
@@ -75,19 +81,56 @@ You MUST reply in JSON format, no exceptions. Example:
       "applicable": <true/false>,
       "correctness": <degree of correctness, 0 to 5>
       "rebuttal": <extremely short rebuttal, inclusive of references>,
+     }
+  ]
+}
+
+## Output example 1
+
+{
+  "fact_checks": [
+    {
+      "role": "User",
+      "msg_id": "msg_5dUiwr8,
+      "applicable": false,
+      "correctness": 5,
+      "rebuttal": "",
+      "links": []
+    }
+}
+
+## Output example 2
+
+{
+  "fact_checks": [
+    {
+      "role": "User",
+      "msg_id": "msg_aHgrh56,
+      "applicable": true,
+      "correctness": 1,
+      "rebuttal": "No known living human is 200 years old.",
       "links": [
         {
-          "title": <title of the link>,
-          "url": <url of the link>
+          "title": "Wikipedia",
+          "url": "https://en.wikipedia.org/wiki/List_of_the_oldest_living_people"
+        }
+      ]
+    },
+    {
+      "role": "Assistant",
+      "msg_id": "msg_3j4hG3h",
+      "applicable": true,
+      "correctness": 5,
+      "rebuttal": "The Earth's circumference is 40,075 km.",
+      "links": [
+        {
+          "title": "Wikipedia",
+          "url": "https://en.wikipedia.org/wiki/Earth"
         }
       ]
     }
   ]
 }
----
-- Do not produce "rebuttal" or "links" if "applicable" is false.
-- Any URL link must exist and must be valid.
-- Generate only 1 full piece of JSON output.
 """
 
     def AddMessage(self, srcMsg):
@@ -97,7 +140,7 @@ You MUST reply in JSON format, no exceptions. Example:
         self.srcMessages = []
 
     def makeConvoMessage(self, src_id, role, content):
-        out = f"- Message: {src_id} by {role}:\n"
+        out = f"- Message {src_id} by {role}:\n"
         for cont in content:
             out += cont['value'] + "\n"
         return out
@@ -135,8 +178,8 @@ You MUST reply in JSON format, no exceptions. Example:
             args["tools_user_data"] = tools_user_data
 
             # Look up the function in the dictionary and call it
-            if name in AssistTools.ToolActions:
-                function_response = AssistTools.ToolActions[name](args)
+            if name in AssistTools.tool_items_dict:
+                function_response = AssistTools.tool_items_dict[name].function(args)
             else:
                 function_response = AssistTools.fallback_tool_function(name, args)
 
@@ -155,8 +198,9 @@ You MUST reply in JSON format, no exceptions. Example:
         tools = []
         #tools.append({"type": "code_interpreter"})
         #tools.append({"type": "retrieval"})
-        for _, defn in AssistTools.ToolDefinitions.items():
-            tools.append({ "type": "function", "function": defn })
+        for item in AssistTools.tool_items:
+            if not item.requires_assistant:
+                tools.append({ "type": "function", "function": item.definition })
 
         #print(f"Sending Conversation:\n{convo}\n------")
         messages = [
@@ -194,20 +238,70 @@ You MUST reply in JSON format, no exceptions. Example:
         convo = self.buildConvoString(1000)
         return self.genCompletion(wrap, self.instructionsForCritique, convo)
 
+    @staticmethod
+    def extract_first_json_object(response):
+        try:
+            open_brackets = 0
+            json_start = 0
+            json_end = 0
+            in_string = False
+            escape = False
+
+            for i, char in enumerate(response):
+                if char == '"' and not escape:
+                    in_string = not in_string
+                elif char == '\\' and in_string:
+                    escape = not escape
+                    continue
+                elif char == '{' and not in_string:
+                    if open_brackets == 0:
+                        json_start = i
+                    open_brackets += 1
+                elif char == '}' and not in_string:
+                    open_brackets -= 1
+                    if open_brackets == 0:
+                        json_end = i + 1
+                        break
+                if escape:
+                    escape = False
+
+            if json_start < json_end:
+                json_str = response[json_start:json_end]
+                return json.loads(json_str)
+            else:
+                return {}
+        except Exception as e:
+            print(f"Error parsing JSON: {e}")
+            return {}
+
     def GenFactCheck(self, wrap, tools_user_data):
-        # The conversation is split into two parts:
-        # - the first part is the context, which is not fact-checked
-        # - the second part is the actual fact-checking
+        n = len(self.srcMessages)
+        if n == 0:
+            return "{}"
+
         CONTEXT_MESSAGES = 8
         FACT_CHECK_MESSAGES = 2
-        convo = "## Begin context for fact-checking. Context-only DO NOT fact-check\n"
-        n = len(self.srcMessages)
+        convo = ""
         staIdx = max(0, n - CONTEXT_MESSAGES)
-        for index in range(staIdx, n):
+        fcStartIdx = n - FACT_CHECK_MESSAGES
+
+        # Only add context section if there are messages before the fact-checking section
+        if staIdx < fcStartIdx:
+            convo += "## Begin context for fact-checking. Context-only DO NOT fact-check\n"
+            for index in range(staIdx, fcStartIdx):
+                srcMsg = self.srcMessages[index]
+                convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
+
+        # Fact-checking section
+        convo += "## Begin statements to fact-check. DO fact-check below\n"
+        for index in range(fcStartIdx, n):
             srcMsg = self.srcMessages[index]
-            if index == (n-FACT_CHECK_MESSAGES):
-                convo += "## Begin statements to fact-check. DO fact-check below\n"
             convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
 
-        return self.genCompletion(wrap, self.instructionsForFactCheck, convo, tools_user_data)
+        response = self.genCompletion(wrap, self.instructionsForFactCheck, convo, tools_user_data)
+        # Handle the GPT-3.5 bug for when the response is more than one JSON object
+        fixed_response = ConvoJudge.extract_first_json_object(response)
+        # Convert the Python dictionary back to a JSON string if needed
+        return json.dumps(fixed_response)
+
 

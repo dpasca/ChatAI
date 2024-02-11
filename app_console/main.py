@@ -252,12 +252,12 @@ def printFactCheck(fcRepliesStr: str) -> None:
     logmsg(f"Fact-check replies: {fcRepliesStr}")
     try:
         fcReplies = json.loads(fcRepliesStr)
-        if len(fcReplies['fact_check']) == 0:
+        if len(fcReplies['fact_checks']) == 0:
             return
         #console.log(fcReplies)
 
         outStr = ""
-        for reply in fcReplies['fact_check']:
+        for reply in fcReplies['fact_checks']:
             if reply.get('applicable') == False:
                 logmsg("Fact-check not applicable")
                 continue
@@ -282,8 +282,9 @@ def printFactCheck(fcRepliesStr: str) -> None:
             if rebuttal or links:
                 outStr += f"> {rebuttal}\n"
                 for link in links:
-                    readableLink = link if not link.startswith("https://") else link[len("https://"):]
-                    outStr += f"> - [{readableLink}]({link})\n"
+                    url = link.get('url') or ""
+                    title = link.get('title') or url
+                    outStr += f"> - [{title}]({url})\n"
 
         if outStr:
             console.print(Markdown(outStr))

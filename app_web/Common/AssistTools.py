@@ -59,42 +59,65 @@ def get_user_local_time(arguments=None):
         "user_local_time": json.dumps(user_time, default=str),
         "user_timezone": timezone }
 
-# Tool definitions and actions
-ToolDefinitions = {
-    "perform_web_search": {
-        "name": "perform_web_search",
-        "description": "Perform a web search for any unknown or current information",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The search query"
-                }
-            },
-            "required": ["query"]
-        }
-    },
-    "get_user_info": {
-        "name": "get_user_info",
-        "description": "Get the user info, such as timezone and user-agent (browser)",
-    },
-    "get_unix_time": {
-        "name": "get_unix_time",
-        "description": "Get the current unix time",
-    },
-    "get_user_local_time": {
-        "name": "get_user_local_time",
-        "description": "Get the user local time and timezone",
-    },
-}
+from typing import List, Dict, Any
+from pydantic import BaseModel
 
-ToolActions = {
-    "perform_web_search": perform_web_search,
-    "get_user_info": get_user_info,
-    "get_unix_time": get_unix_time,
-    "get_user_local_time": get_user_local_time,
-}
+class ToolItem(BaseModel):
+    name: str
+    function: Callable[[dict], Any]
+    requires_assistant: bool = False
+    definition: Dict[str, Any]
+
+tool_items = [
+    ToolItem(
+        name="perform_web_search",
+        function=perform_web_search,
+        requires_assistant=False,
+        definition={
+            "name": "perform_web_search",
+            "description": "Perform a web search for any unknown or current information",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    ),
+    ToolItem(
+        name="get_user_info",
+        function=get_user_info,
+        requires_assistant=False,
+        definition={
+            "name": "get_user_info",
+            "description": "Get the user info, such as timezone and user-agent (browser)",
+        }
+    ),
+    ToolItem(
+        name="get_unix_time",
+        function=get_unix_time,
+        requires_assistant=False,
+        definition={
+            "name": "get_unix_time",
+            "description": "Get the current unix time",
+        }
+    ),
+    ToolItem(
+        name="get_user_local_time",
+        function=get_user_local_time,
+        requires_assistant=False,
+        definition={
+            "name": "get_user_local_time",
+            "description": "Get the user local time and timezone",
+        }
+    ),
+]
+
+tool_items_dict = {item.name: item for item in tool_items}
 
 def fallback_tool_function(name, arguments):
     logerr(f"Unknown function {name}. Falling back to web search !")

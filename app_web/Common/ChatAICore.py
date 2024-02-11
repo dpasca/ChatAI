@@ -205,8 +205,8 @@ def handle_required_action(wrap, run, thread_id, tools_user_data):
         arguments["tools_user_data"] = tools_user_data
 
         # Look up the function in the dictionary and call it
-        if name in AssistTools.ToolActions:
-            responses = AssistTools.ToolActions[name](arguments)
+        if name in AssistTools.tool_items_dict:
+            responses = AssistTools.tool_items_dict[name].function(arguments)
         else:
             responses = AssistTools.fallback_tool_function(name, arguments)
 
@@ -298,8 +298,8 @@ def create_assistant(
     tools.append({"type": "code_interpreter"})
 
     # Setup the tools
-    for name, defn in AssistTools.ToolDefinitions.items():
-        tools.append({ "type": "function", "function": defn })
+    for item in AssistTools.tool_items:
+        tools.append({ "type": "function", "function": item.definition })
 
     if config["enable_retrieval"]:
         tools.append({"type": "retrieval"})

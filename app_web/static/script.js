@@ -367,9 +367,9 @@ function pollForAddendums() {
         //console.log("Found addendums:", data.addendums);
         for (let addendum of data.addendums) {
             // Check if the addendim has fact-check array
-            if (addendum.hasOwnProperty('fact_check') && addendum.fact_check.length > 0) {
-                //console.log("Found fact-checks:", addendum.fact_check);
-                for (let fcheck of addendum.fact_check) {
+            if (addendum.hasOwnProperty('fact_checks') && addendum.fact_checks.length > 0) {
+                //console.log("Found fact-checks:", addendum.fact_checks);
+                for (let fcheck of addendum.fact_checks) {
                     if (fcheck.applicable) {
                         appendFactCheck(fcheck);
                     }
