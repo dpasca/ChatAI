@@ -22,6 +22,7 @@ from Common.StorageCloud import StorageCloud as Storage
 from Common.logger import *
 from Common.OAIUtils import *
 from Common import ChatAICore
+from Common.MsgThread import MsgThread
 
 USER_BUCKET_PATH = "user_a_00001"
 ENABLE_SLEEP_LOGGING = False
@@ -147,7 +148,7 @@ def local_get_user_info(arguments):
 def createThread(force_new=False) -> None:
     # Create or get the thread
     if ('thread_id' not in session) or force_new:
-        mt = ChatAICore.MsgThread.create_thread(_oa_wrap)
+        mt = MsgThread.create_thread(_oa_wrap)
         sess_set_msg_thread(mt)
         logmsg("Creating new thread with ID " + mt.thread_id)
         # Save the thread ID to the session
@@ -155,7 +156,7 @@ def createThread(force_new=False) -> None:
         if 'msg_thread_data' in session:
             del session['msg_thread_data']
     else:
-        mt = ChatAICore.MsgThread.from_thread_id(_oa_wrap, session['thread_id'])
+        mt = MsgThread.from_thread_id(_oa_wrap, session['thread_id'])
         sess_set_msg_thread(mt)
         logmsg("Retrieved existing thread with ID " + mt.thread_id)
 

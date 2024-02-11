@@ -11,14 +11,23 @@ import pytz
 from datetime import datetime
 from duckduckgo_search import DDGS
 from .logger import *
-
 from typing import Callable, Optional
+from .MsgThread import MsgThread as MsgThread
 
+#==================================================================
+# Define the super_get_user_info function
 super_get_user_info: Callable[[Optional[dict]], dict] = lambda arguments=None: None
 
 def set_super_get_user_info(super_get_user_info_: Callable[[Optional[dict]], dict]):
     global super_get_user_info
     super_get_user_info = super_get_user_info_
+
+#==================================================================
+super_get_main_MsgThread: Callable[[], MsgThread] = lambda: None
+
+def set_super_get_main_MsgThread(super_get_main_MsgThread_: Callable[[], MsgThread]):
+    global super_get_main_MsgThread
+    super_get_main_MsgThread = super_get_main_MsgThread_
 
 #==================================================================
 def ddgsTextSearch(query, max_results=None):
@@ -59,6 +68,16 @@ def get_user_local_time(arguments=None):
         "user_local_time": json.dumps(user_time, default=str),
         "user_timezone": timezone }
 
+def ask_research_assistant(arguments=None):
+    # If there is no main message thread, then perform a simple web search
+    if super_get_main_MsgThread() is None or super_get_main_MsgThread().judge is None:
+        return ddgsTextSearch(arguments["query"], max_results=10)
+
+    return super_get_main_MsgThread().judge.gen_research(
+                wrap=arguments["wrap"],
+                query=arguments["query"],
+                tools_user_data=arguments["tools_user_data"])
+
 from typing import List, Dict, Any
 from pydantic import BaseModel
 
@@ -66,6 +85,7 @@ class ToolItem(BaseModel):
     name: str
     function: Callable[[dict], Any]
     requires_assistant: bool = False
+    usable_by_root_assistant: bool = False
     definition: Dict[str, Any]
 
 tool_items = [
@@ -73,6 +93,7 @@ tool_items = [
         name="perform_web_search",
         function=perform_web_search,
         requires_assistant=False,
+        usable_by_root_assistant=False,
         definition={
             "name": "perform_web_search",
             "description": "Perform a web search for any unknown or current information",
@@ -92,6 +113,7 @@ tool_items = [
         name="get_user_info",
         function=get_user_info,
         requires_assistant=False,
+        usable_by_root_assistant=True,
         definition={
             "name": "get_user_info",
             "description": "Get the user info, such as timezone and user-agent (browser)",
@@ -101,6 +123,7 @@ tool_items = [
         name="get_unix_time",
         function=get_unix_time,
         requires_assistant=False,
+        usable_by_root_assistant=True,
         definition={
             "name": "get_unix_time",
             "description": "Get the current unix time",
@@ -110,9 +133,30 @@ tool_items = [
         name="get_user_local_time",
         function=get_user_local_time,
         requires_assistant=False,
+        usable_by_root_assistant=True,
         definition={
             "name": "get_user_local_time",
             "description": "Get the user local time and timezone",
+        }
+    ),
+    ToolItem(
+        name="ask_research_assistant",
+        function=ask_research_assistant,
+        requires_assistant=True,
+        usable_by_root_assistant=True,
+        definition={
+            "name": "ask_research_assistant",
+            "description": "Ask the research assistant for help",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query"
+                    }
+                },
+                "required": ["query"]
+            }
         }
     ),
 ]

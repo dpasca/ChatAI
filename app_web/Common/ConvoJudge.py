@@ -133,6 +133,20 @@ may not be aware of, such as the user's background, location, etc.
 }
 """
 
+        self.instructionsForResearch = make_header("researcher") + """
+Perform in-depth research on the submitted query.
+Use the conversation context to guide your research.
+Use the web search tool as much as possible.
+Use the tool get_user_local_time when the topic of time and dates is involved.
+Use all the tools at your disposal as much as possible, they provide accuracy
+and your foremost goal is to provide accuracy and correctness.
+
+Provide links and abstracts to the most relevant sources.
+
+Be concise, respond "robotically" but be detailed, exacting, precise, fastidious.
+When refuting, provide the reasoning and calculations behind your rebuttal.
+"""
+
     def AddMessage(self, srcMsg):
         self.srcMessages.append(srcMsg)
 
@@ -155,7 +169,7 @@ may not be aware of, such as the user's background, location, etc.
         return convo
 
     @staticmethod
-    def apply_tools(response, tools_user_data) -> list:
+    def apply_tools(response, wrap, tools_user_data) -> list:
         response_msg = response.choices[0].message
         calls = response_msg.tool_calls
         logmsg(f"Tool calls: {calls}")
@@ -174,7 +188,8 @@ may not be aware of, such as the user's background, location, etc.
 
             logmsg(f"Tool call: {name}({args})")
 
-            # Add the tools_user_data to the arguments
+            # Add wrap and tools_user_data to the arguments
+            args["wrap"] = wrap
             args["tools_user_data"] = tools_user_data
 
             # Look up the function in the dictionary and call it
@@ -216,7 +231,7 @@ may not be aware of, such as the user's background, location, etc.
         )
 
         # See if there are any tools to apply
-        if (new_messages := ConvoJudge.apply_tools(response, tools_user_data)):
+        if (new_messages := ConvoJudge.apply_tools(response, wrap, tools_user_data)):
             logmsg(f"Applying tools: {new_messages}")
             messages += new_messages
             logmsg(f"New conversation with tool answers: {messages}")
@@ -229,6 +244,13 @@ may not be aware of, such as the user's background, location, etc.
             return post_tool_response.choices[0].message.content
 
         return response.choices[0].message.content
+
+    def gen_completion_ret_json(self, wrap, instructions, convo, tools_user_data=None):
+        response = self.genCompletion(wrap, self.instructionsForFactCheck, convo, tools_user_data)
+        # Handle the GPT-3.5 bug for when the response is more than one JSON object
+        fixed_response = ConvoJudge.extract_first_json_object(response)
+        # Convert the Python dictionary back to a JSON string if needed
+        return json.dumps(fixed_response)
 
     def GenSummary(self, wrap):
         convo = self.buildConvoString(1000)
@@ -298,10 +320,33 @@ may not be aware of, such as the user's background, location, etc.
             srcMsg = self.srcMessages[index]
             convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
 
-        response = self.genCompletion(wrap, self.instructionsForFactCheck, convo, tools_user_data)
-        # Handle the GPT-3.5 bug for when the response is more than one JSON object
-        fixed_response = ConvoJudge.extract_first_json_object(response)
-        # Convert the Python dictionary back to a JSON string if needed
-        return json.dumps(fixed_response)
+        return self.gen_completion_ret_json(wrap, self.instructionsForFactCheck, convo, tools_user_data)
+
+    def gen_research(self, wrap, query, tools_user_data):
+        """ Generate a research completion
+                :param wrap: OpenAIWrapper object
+                :param query: The query to research
+                :param tools_user_data: The user data to pass to the tools
+                :return: The research completion
+        """
+        n = len(self.srcMessages)
+        if n == 0:
+            return "{}"
+
+        CONTEXT_MESSAGES = 8
+        convo = ""
+        staIdx = max(0, n - CONTEXT_MESSAGES)
+
+        # Context section
+        convo += "## Begin context for your research. Context-only DO NOT research on this\n"
+        for index in range(staIdx, n):
+            srcMsg = self.srcMessages[index]
+            convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
+
+        # Query to research about
+        convo += "## Begin query for research. DO research about this\n"
+        convo += "\n{query}\n"
+
+        return self.genCompletion(wrap, self.instructionsForResearch, convo, tools_user_data)
 
 

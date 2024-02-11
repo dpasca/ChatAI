@@ -27,6 +27,7 @@ from app_web.Common.StorageLocal import StorageLocal as Storage
 from app_web.Common.logger import *
 from app_web.Common.OAIUtils import *
 from app_web.Common import ChatAICore
+from app_web.Common.MsgThread import MsgThread
 
 import locale
 # Set the locale to the user's default setting/debug
@@ -153,7 +154,9 @@ ChatAICore.SetSleepForAPI(sleepForAPI)
 
 #==================================================================
 # Callback to get the user info from the session
-def local_get_user_info():
+def local_get_user_info(arguments):
+    if 'tools_user_data' not in arguments:
+        return 'No user info available'
     # Populate the session['user_info'] with local user info (shell locale and timezone)
     currentTime = datetime.now()
     if not 'user_info' in session:
@@ -167,14 +170,14 @@ def createThread(force_new=False) -> None:
 
     # Create or get the thread
     if ('thread_id' not in session) or (session['thread_id'] is None) or force_new:
-        _msg_thread = ChatAICore.MsgThread.create_thread(_oa_wrap)
+        _msg_thread = MsgThread.create_thread(_oa_wrap)
         logmsg("Creating new thread with ID " + _msg_thread.thread_id)
         # Save the thread ID to the session
         session['thread_id'] = _msg_thread.thread_id
         if 'msg_thread_data' in session:
             del session['msg_thread_data']
     else:
-        _msg_thread = ChatAICore.MsgThread.from_thread_id(_oa_wrap, session['thread_id'])
+        _msg_thread = MsgThread.from_thread_id(_oa_wrap, session['thread_id'])
         logmsg("Retrieved existing thread with ID " + _msg_thread.thread_id)
 
     # Get our cached thread messages
