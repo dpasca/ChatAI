@@ -7,7 +7,7 @@ VERBOSE_LOGGING = os.getenv('VERBOSE_LOGGING', '0') == '1'
 
 #==================================================================
 def print_trimmed(msg):
-    if len(msg) >150:
+    if not VERBOSE_LOGGING and len(msg) > 150:
         print(msg[:150] + "...")
     else:
         print(msg)
