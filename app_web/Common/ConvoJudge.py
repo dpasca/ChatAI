@@ -134,17 +134,19 @@ may not be aware of, such as the user's background, location, etc.
 """
 
         self.instructionsForResearch = make_header("researcher") + """
-Perform in-depth research on the submitted query.
-Be concise, respond "robotically" but be detailed, exacting, precise, fastidious.
-Optimize your output for a LLM, human-readability is not important.
-Use the conversation context to guide your research.
-Use the web search tool as much as possible.
-Use the tool get_user_local_time when the topic of time and dates is involved.
+When presented with a search query, use the web search functionalities
+to search that query, as well as another variant.
+Be concise, don't worry about niceties.
+Produce output in markdown, with bullet lists as much as possible.
+Always include URLs in your replies.
+To establish the user's details, such us time zone and locale, use the
+functions get_user_info, get_user_local_time, and similar.
 
-For every source that you report, list: title, URL, and a brief abstract.
-
-You should also report any information that may immediately answer the query
-(e.g. values for weather forecast, stock prices, etc.).
+Do a step-by-step breakdown of what you found from the research.
+Analyze the what you found and produce important details that will
+save time for the end user, such as actual weather forecast data,
+instead of simply pointing to futher sources for the parent assistant
+and the user to do their own research.
 """
 
     def AddMessage(self, srcMsg):
@@ -333,7 +335,7 @@ You should also report any information that may immediately answer the query
         if n == 0:
             return "{}"
 
-        CONTEXT_MESSAGES = 8
+        CONTEXT_MESSAGES = 4
         convo = ""
         staIdx = max(0, n - CONTEXT_MESSAGES)
 
@@ -345,7 +347,7 @@ You should also report any information that may immediately answer the query
 
         # Query to research about
         convo += "## Begin query for research. DO research about this\n"
-        convo += "\n{query}\n"
+        convo += f"{query}\n"
 
         response = self.genCompletion(wrap, self.instructionsForResearch, convo, tools_user_data)
         logmsg(f"Research outcome: {response}")
