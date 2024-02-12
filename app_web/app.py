@@ -104,6 +104,7 @@ def sess_get_user_info(session_id=None):
         return sess.user_info
 
 def sess_set_user_info(new_info):
+    logmsg(f"Setting new user info: {new_info}")
     sess = get_or_create_app_session(session.sid)
     with sess.lock:
         sess.user_info = new_info

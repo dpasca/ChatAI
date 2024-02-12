@@ -192,6 +192,7 @@ def SendUserMessage(
         if run.status == "requires_action":
             # Handle the function-calling
             handle_required_action(wrap, run, thread_id, tools_user_data)
+            last_printed_status = None
 
         if run.status in ["expired", "cancelling", "cancelled", "failed"]:
             logerr("Run failed")
@@ -204,6 +205,7 @@ def SendUserMessage(
                 order="asc",
                 after=last_message_id
             )
+            logmsg(f"Received {len(new_messages)} new messages: {new_messages}")
 
             if new_messages:
                 last_message_id = new_messages[-1].id
