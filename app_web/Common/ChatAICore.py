@@ -229,10 +229,21 @@ def create_assistant(
     tools = []
     tools.append({"type": "code_interpreter"})
 
+    has_research_assistant = config["support_enable_research_assistant"]
+
     # Setup the tools
     for item in AssistTools.tool_items:
-        if item.usable_by_root_assistant:
-            tools.append({ "type": "function", "function": item.definition })
+        # When we have a research-assistant, we don't enable web search
+        #  for this assistant here, because it has a tendency to want to
+        #  search for itself and never delegate !
+        if has_research_assistant:
+            if item.name == "perform_web_search":
+                continue
+        else:
+            if item.name == "ask_research_assistant":
+                continue
+        # Add the tool to the list of tools
+        tools.append({ "type": "function", "function": item.definition })
 
     if config["enable_retrieval"]:
         tools.append({"type": "retrieval"})

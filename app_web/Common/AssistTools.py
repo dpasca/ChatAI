@@ -96,7 +96,6 @@ class ToolItem(BaseModel):
     name: str
     function: Callable[[dict], Any]
     requires_assistant: bool = False
-    usable_by_root_assistant: bool = False
     definition: Dict[str, Any]
 
 tool_items = [
@@ -104,7 +103,6 @@ tool_items = [
         name="perform_web_search",
         function=perform_web_search,
         requires_assistant=False,
-        usable_by_root_assistant=False,
         definition={
             "name": "perform_web_search",
             "description": "Perform a web search for any unknown or current information",
@@ -124,7 +122,6 @@ tool_items = [
         name="get_user_info",
         function=get_user_info,
         requires_assistant=False,
-        usable_by_root_assistant=True,
         definition={
             "name": "get_user_info",
             "description": "Get the user info, such as timezone and user-agent (browser)",
@@ -134,7 +131,6 @@ tool_items = [
         name="get_unix_time",
         function=get_unix_time,
         requires_assistant=False,
-        usable_by_root_assistant=True,
         definition={
             "name": "get_unix_time",
             "description": "Get the current unix time",
@@ -144,7 +140,6 @@ tool_items = [
         name="get_user_local_time",
         function=get_user_local_time,
         requires_assistant=False,
-        usable_by_root_assistant=True,
         definition={
             "name": "get_user_local_time",
             "description": "Get the user local time and timezone",
@@ -154,7 +149,6 @@ tool_items = [
         name="ask_research_assistant",
         function=ask_research_assistant,
         requires_assistant=True,
-        usable_by_root_assistant=True,
         definition={
             "name": "ask_research_assistant",
             "description": "Ask the research assistant for help",

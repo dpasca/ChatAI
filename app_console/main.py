@@ -193,10 +193,10 @@ def createThread(force_new=False) -> None:
     save_session()
 
     # Optional: create the judge for the thread
-    if config["support_enable_factcheck"]:
-        _msg_thread.create_judge(
-            model=config["support_model_version"],
-            temperature=config["support_model_temperature"])
+    # Create the sub-agents system for the message-thread
+    _msg_thread.create_judge(
+        model=config["support_model_version"],
+        temperature=config["support_model_temperature"])
 
 def save_session():
     session['msg_thread_data'] = _msg_thread.serialize_data()
@@ -355,7 +355,9 @@ def main():
 
         # Start the fact-checking
         if ret_val == ChatAICore.SUCCESS:
-            printFactCheck(_msg_thread.gen_fact_check())
+            # Request fact-checking if enabled
+            if config['support_enable_factcheck']:
+                printFactCheck(_msg_thread.gen_fact_check())
         else:
             logerr(f"Error sending user message: {ret_val}")
 

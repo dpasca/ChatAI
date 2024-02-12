@@ -142,11 +142,15 @@ Always include URLs in your replies.
 To establish the user's details, such us time zone and locale, use the
 functions get_user_info, get_user_local_time, and similar.
 
-Do a step-by-step breakdown of what you found from the research.
-Analyze the what you found and produce important details that will
-save time for the end user, such as actual weather forecast data,
-instead of simply pointing to futher sources for the parent assistant
-and the user to do their own research.
+Report essential facts that are relevant to the conversation, e.g.
+if the query is about the weather, do report temperature, and
+any other stats that you acquired in your research. Repying
+with links for the user to do his/her own research should be
+the last resort.
+When a question has a specific answer, the links are meant as
+a potential form of verification, not as the actual answer.
+Do not waste the parent assistant's and the user's time by
+telling them to follow some links.
 """
 
     def AddMessage(self, srcMsg):

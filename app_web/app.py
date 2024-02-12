@@ -186,11 +186,10 @@ def createThread(force_new=False) -> None:
     print(f"Found {new_n} new messages in the thread history")
     save_session()
 
-    # Optional: create the judge for the thread
-    if config["support_enable_factcheck"]:
-        mt.create_judge(
-            model=config["support_model_version"],
-            temperature=config["support_model_temperature"])
+    # Create the sub-agents system for the message-thread
+    mt.create_judge(
+        model=config["support_model_version"],
+        temperature=config["support_model_temperature"])
 
 def save_session():
     # When saving the session, we serialize our local thread data to the session obj
@@ -348,7 +347,7 @@ def get_replies():
             #logmsg("No pending work")
             return jsonify({'replies': [], 'message': 'No pending work', 'final': True}), 200
 
-        if replies.get_elapsed() > (60*2):
+        if replies.get_elapsed() > (60*5):
             #logmsg("Timeout waiting for replies")
             return jsonify({'replies': [], 'message': 'Timeout', 'final': True}), 200
 
@@ -356,7 +355,9 @@ def get_replies():
             reply = replies.get()
             logmsg(f"Got reply: {reply}")
             if reply == 'END':
-                session['generate_fchecks'] = True # Tell to make the fact-checks
+                # Request fact-checking if enabled
+                if config['support_enable_factcheck']:
+                    session['generate_fchecks'] = True
                 logmsg(f"Reached end of replies")
                 sess_set_replies(TaskQueue())
                 return jsonify({'replies': send_replies, 'final': True}), 200
