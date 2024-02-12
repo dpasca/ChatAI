@@ -350,7 +350,7 @@ function pollForReplies(assistant_name) {
         //console.log("Polling for replies:", data);
         if (!data.final) {
             // Continue polling if not final
-            setTimeout(() => pollForReplies(assistant_name), 500); // Poll every some ms
+            setTimeout(() => pollForReplies(assistant_name), 1000);
         } else {
             // Processing is complete
             //console.log("Processing complete");
@@ -405,7 +405,7 @@ function pollForAddendums() {
         //    console.log("Found message:", data.message);
         //}
         if (!data.final) {
-            setTimeout(pollForAddendums, 500); // Poll every 500 ms
+            setTimeout(pollForAddendums, 1000); // Poll at a fixed interval
         }
     })
     .catch(error => {
