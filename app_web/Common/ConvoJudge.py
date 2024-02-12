@@ -52,85 +52,34 @@ Reply in the following format:
 """
 
         self.instructionsForFactCheck = make_header("fact-checker") + """
-Performs in-depth research on
-any given statement of the conversation described above.
-Provide a rebuttal with details, clarifications, references,
-opposing views and counter-arguments.
-Be concise, respond "robotically" but be detailed, exacting, precise, fastidious.
-When refuting, provide the reasoning and calculations behind your rebuttal.
-Use the web search tool as much as possible.
-Use the tool get_user_local_time when the topic of time and dates is involved.
-Use all the tools at your disposal as much as possible, they provide accuracy
-and your foremost goal is to provide accuracy and correctness.
-Ignore checking on political topics.
-Beware of the fact that the assistant may have access to information
-may not be aware of, such as the user's background, location, etc.
 
-- You must reply with one valid JSON object.
-- Place all fact-checking responses in one "fact_checks" array of objects.
-- Do not include any explanation or commentary in your response.
-- Ensure all provided URLs are valid and accessible.
-
-## Expected JSON structure
+## Reply UNIQUELY with a pure raw JSON string, like the template below:
 
 {
-  "fact_check": [
+  "fact_checks": [
     {
-      "role": <role of the assertion>,
-      "msg_id": <message id>,
-      "applicable": <true/false>,
-      "correctness": <degree of correctness, 0 to 5>
-      "rebuttal": <extremely short rebuttal, inclusive of references>,
+      "role": "<role of the assertion>",
+      "msg_id": "<message id>",
+      "correctness": <degree of correctness 0 to 5>,
+      "rebuttal": "<extremely short rebuttal, inclusive of references>",
+      "links": [
+        {
+          "title": "<title of the link>",
+          "url": "<url of the link>"
+        }
+      ]
      }
   ]
 }
 
-## Output example 1
+## Rules for output
 
-{
-  "fact_checks": [
-    {
-      "role": "User",
-      "msg_id": "msg_5dUiwr8,
-      "applicable": false,
-      "correctness": 5,
-      "rebuttal": "",
-      "links": []
-    }
-}
-
-## Output example 2
-
-{
-  "fact_checks": [
-    {
-      "role": "User",
-      "msg_id": "msg_aHgrh56,
-      "applicable": true,
-      "correctness": 1,
-      "rebuttal": "No known living human is 200 years old.",
-      "links": [
-        {
-          "title": "Wikipedia",
-          "url": "https://en.wikipedia.org/wiki/List_of_the_oldest_living_people"
-        }
-      ]
-    },
-    {
-      "role": "Assistant",
-      "msg_id": "msg_3j4hG3h",
-      "applicable": true,
-      "correctness": 5,
-      "rebuttal": "The Earth's circumference is 40,075 km.",
-      "links": [
-        {
-          "title": "Wikipedia",
-          "url": "https://en.wikipedia.org/wiki/Earth"
-        }
-      ]
-    }
-  ]
-}
+Use the web search tool to scrutinize the statement being questioned.
+Use the tool get_user_local_time when the topic of time and dates is involved.
+Be concise, exacting, precise, fastidious in your reply.
+When refuting, provide the reasoning and calculations behind your rebuttal.
+Do not simply say that something is inaccurate, but show the actual reasoning
+behind it in the "rebuttal" field.
 """
 
         self.instructionsForResearch = make_header("researcher") + """
@@ -253,8 +202,10 @@ telling them to follow some links.
 
     def gen_completion_ret_json(self, wrap, instructions, convo, tools_user_data=None):
         response = self.genCompletion(wrap, self.instructionsForFactCheck, convo, tools_user_data)
+        logmsg(f"Response: {response}")
         # Handle the GPT-3.5 bug for when the response is more than one JSON object
         fixed_response = ConvoJudge.extract_first_json_object(response)
+        logmsg(f"Fixed response: {fixed_response}")
         # Convert the Python dictionary back to a JSON string if needed
         return json.dumps(fixed_response)
 
@@ -299,12 +250,13 @@ telling them to follow some links.
             else:
                 return {}
         except Exception as e:
-            print(f"Error parsing JSON: {e}")
+            logerr(f"Error parsing JSON: {e}")
             return {}
 
     def GenFactCheck(self, wrap, tools_user_data):
         n = len(self.srcMessages)
         if n == 0:
+            logmsg("No source messages found")
             return "{}"
 
         CONTEXT_MESSAGES = 8

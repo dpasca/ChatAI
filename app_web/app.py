@@ -399,9 +399,6 @@ def get_addendums():
 
     logmsg(f"FC JSON {fc}")
 
-    #if not fc['applicable']:
-    #    return jsonify({'addendums': [], 'message': 'No pending fact-checks', 'final': True}), 200
-
     return jsonify({'addendums': [fc], 'final': True}), 200
 
 #===============================================================================

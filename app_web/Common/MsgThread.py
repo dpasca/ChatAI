@@ -163,17 +163,7 @@ class MsgThread(BaseModel):
             self.judge.AddMessage(msg)
 
     def gen_fact_check(self, tools_user_data=None):
-        if self.judge:
-            fc = self.judge.GenFactCheck(self.wrap, tools_user_data)
-            # Find and remove ```json at start and ``` at end
-            #saved_fc = fc
-            if fc.startswith("```json"): fc = fc[7:]
-            if fc.endswith("```"): fc = fc[:-3]
-            #if saved_fc != fc:
-            #    logmsg(f"Stripped ``` from fact check")
-            return fc
-        else:
-            return None
+        return self.judge.GenFactCheck(self.wrap, tools_user_data)
 
     def add_message(self, msg):
         self.messages.append(msg)

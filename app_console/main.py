@@ -266,10 +266,6 @@ def printFactCheck(fcRepliesStr: str) -> None:
 
         outStr = ""
         for reply in fcReplies['fact_checks']:
-            if reply.get('applicable') == False:
-                logmsg("Fact-check not applicable")
-                continue
-
             if len(outStr) > 0:
                 outStr += "\n"
 

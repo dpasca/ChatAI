@@ -154,7 +154,7 @@ function appendFactCheck(fcheck) {
     fullText = "";
     switch (fcheck.correctness) {
     case 0:
-    case 1: 
+    case 1:
     case 2: fullText += '❌'; break;
     case 3:
     case 4:
@@ -169,7 +169,7 @@ function appendFactCheck(fcheck) {
     else {
         switch (fcheck.correctness) {
         case 0:
-        case 1: 
+        case 1:
         case 2: fullText += ' Not Credible'; break;
         case 3:
         case 4:
@@ -391,9 +391,7 @@ function pollForAddendums() {
             if (addendum.hasOwnProperty('fact_checks') && addendum.fact_checks.length > 0) {
                 //console.log("Found fact-checks:", addendum.fact_checks);
                 for (let fcheck of addendum.fact_checks) {
-                    if (fcheck.applicable) {
-                        appendFactCheck(fcheck);
-                    }
+                    appendFactCheck(fcheck);
                 }
             }
             else {
