@@ -218,8 +218,10 @@ def create_assistant(
         wrap: OpenAIWrapper,
         config: dict,
         instructions: str,
+        get_main_MsgThread: Callable[[], MsgThread.MsgThread],
         get_user_info: Callable[[], dict]):
 
+    AssistTools.set_super_get_main_MsgThread(get_main_MsgThread)
     AssistTools.set_super_get_user_info(get_user_info)
 
     tools = []

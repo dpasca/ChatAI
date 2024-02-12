@@ -108,9 +108,10 @@ def sess_set_user_info(new_info):
     with sess.lock:
         sess.user_info = new_info
 
-def sess_get_msg_thread():
-    logmsg(f"Getting thread")
-    sess = get_or_create_app_session(session.sid)
+def sess_get_msg_thread(session_id=None):
+    if session_id is None:
+        session_id = session.sid
+    sess = get_or_create_app_session(session_id)
     with sess.lock:
         return sess.msg_thread
 
@@ -143,6 +144,12 @@ def local_get_user_info(arguments):
     if 'tools_user_data' not in arguments:
         return 'No user info available'
     return sess_get_user_info(arguments['tools_user_data'])
+
+def local_get_main_MsgThread(arguments):
+    if 'tools_user_data' not in arguments:
+        logerr("No user data in arguments")
+        return None
+    return sess_get_msg_thread(session_id=arguments['tools_user_data'])
 
 # Create the thread if it doesn't exist
 def createThread(force_new=False) -> None:
@@ -191,6 +198,7 @@ _assistant = ChatAICore.create_assistant(
                 wrap=_oa_wrap,
                 config=config,
                 instructions=assistant_instructions,
+                get_main_MsgThread=local_get_main_MsgThread,
                 get_user_info=local_get_user_info)
 
 #===============================================================================

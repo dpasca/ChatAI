@@ -164,6 +164,10 @@ def local_get_user_info(arguments):
     session['user_info']['timezone'] = str(currentTime.astimezone().tzinfo)
     return session['user_info']
 
+# Return the main message thread global straight up
+def local_get_main_MsgThread(arguments):
+    return _msg_thread
+
 # Create the thread if it doesn't exist
 def createThread(force_new=False) -> None:
     global _msg_thread
@@ -208,6 +212,7 @@ _assistant = ChatAICore.create_assistant(
                 wrap=_oa_wrap,
                 config=config,
                 instructions=assistant_instructions,
+                get_main_MsgThread=local_get_main_MsgThread,
                 get_user_info=local_get_user_info)
 
 #==================================================================

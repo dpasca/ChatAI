@@ -69,11 +69,15 @@ def get_user_local_time(arguments=None):
         "user_timezone": timezone }
 
 def ask_research_assistant(arguments=None):
+
+    msg_thread = super_get_main_MsgThread(arguments)
+
     # If there is no main message thread, then perform a simple web search
-    if super_get_main_MsgThread() is None or super_get_main_MsgThread().judge is None:
+    if msg_thread is None or msg_thread.judge is None:
+        logwarn("No main message thread or judge found. Falling back to web search.")
         return ddgsTextSearch(arguments["query"], max_results=10)
 
-    return super_get_main_MsgThread().judge.gen_research(
+    return msg_thread.judge.gen_research(
                 wrap=arguments["wrap"],
                 query=arguments["query"],
                 tools_user_data=arguments["tools_user_data"])
