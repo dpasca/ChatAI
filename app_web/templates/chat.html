@@ -52,8 +52,11 @@
             <!-- Chat messages will be added here -->
           </div>
           <!-- Add this button above your input field -->
-          <button id="erase-button" class="btn btn-warning btn-sm">Erase Chat</button>
-          <button id="reset-expired-chat" class="btn btn-danger btn-sm">Reset Expired Chat</button>
+          <!-- Wrap buttons in a div with d-flex class -->
+          <div class="d-flex justify-content-start mb-2">
+            <button id="erase-button" class="btn btn-warning btn-sm mr-2" style="display: none;">Erase Chat</button>
+            <button id="reload-button" class="btn btn-info btn-sm" style="display: none;">Reload Chat</button>
+          </div>
           <div class="input-group">
             <textarea class="form-control" id="user-input" placeholder="Type a message..."></textarea>
             <div class="input-group-append">
@@ -83,11 +86,6 @@
                 //console.log("Mobile device detected, hiding input notice");
                 document.getElementById('input-notice').style.display = 'none';
               }
-
-              // Erase button hidden by default
-              document.getElementById('erase-button').style.display = 'none';
-              // Reset Expired Chat button hidden by default
-              document.getElementById('reset-expired-chat').style.display = 'none';
 
               // Event delegation for fact-checks
               setupFactCheckEventDelegation();
@@ -159,7 +157,7 @@
               appendMessage(messages[i], "{{ assistant_name }}");
             }
             if (messages.length > 0) {
-              document.getElementById('erase-button').style.display = 'block';
+              showHideButton('erase-button', true);
             }
           });
 
@@ -170,24 +168,19 @@
       // When the document is loaded, add the event listeners for the buttons
       $(document).ready(function() {
 
-        // Erase the chat when the user clicks the erase button
+        // Erase button
         $('#erase-button').click(function () {
           fetch('/clear_chat', { method: 'POST' })
             .then(function () {
               $('#chatbox').html('');
-              // Hide the erase button
-              document.getElementById('erase-button').style.display = 'none';
+              showHideButton('erase-button', false);
+              showHideButton('reload-button', false);
             });
         });
-        $('#reset-expired-chat').click(function () {
-          fetch('/reset_expired_chat', { method: 'POST' })
-            .then(function () {
-              $('#chatbox').html('');
-              // Hide the reset button
-              document.getElementById('reset-expired-chat').style.display = 'none';
-            document.getElementById('user-input').disabled = false; // Enable input box
-            document.getElementById('send-button').disabled = false; // Enable send button
-            });
+
+        // Reload button
+        document.getElementById('reload-button').addEventListener('click', function() {
+          location.reload();
         });
 
         // Send a message when the user clicks the send button

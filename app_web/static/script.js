@@ -5,6 +5,10 @@
 // Desc: Support for chat.html
 //==================================================================
 
+function showHideButton(buttonId, show) {
+    document.getElementById(buttonId).style.display = show ? 'block' : 'none';
+}
+
 // Instantiate markdown-it with Prism.js for syntax highlighting
 const md = window.markdownit({
     highlight: function (str, lang) {
@@ -301,7 +305,9 @@ function sendMessage(userInput, assistant_name) {
     })
     .catch(error => {
         console.error('There was a problem with the fetch operation:', error);
-        // TODO: have an error message appear in the chat
+
+        showHideButton('reload-button', true);
+        showHideButton('erase-button', true);
 
         removeWaitingAssistMessage(); // Remove the waiting message
         inputBox.disabled = false; // Enable input box
@@ -334,7 +340,7 @@ function pollForReplies(assistant_name) {
             document.getElementById('user-input').disabled = false; // Enable input box
             document.getElementById('send-button').disabled = false; // Enable send button
             removeWaitingAssistMessage(); // Remove the waiting message
-            document.getElementById('erase-button').style.display = 'block'; // Enable the erase button
+            showHideButton('erase-button', true);
 
             // Start polling for addendums
             //console.log("Starting polling for addendums");
@@ -344,10 +350,8 @@ function pollForReplies(assistant_name) {
     .catch(error => {
         console.error('There was a problem with the fetch operation:', error);
 
-        //if (data.error === 'ERR_THREAD_EXPIRED') {
-            document.getElementById('reset-expired-chat').style.display = 'block';
-            document.getElementById('erase-button').style.display = 'none';
-        //}
+        showHideButton('reload-button', true);
+        showHideButton('erase-button', true);
 
         removeWaitingAssistMessage(); // Remove the waiting message
         document.getElementById('user-input').disabled = true; // Disable input box
