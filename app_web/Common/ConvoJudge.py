@@ -135,16 +135,16 @@ may not be aware of, such as the user's background, location, etc.
 
         self.instructionsForResearch = make_header("researcher") + """
 Perform in-depth research on the submitted query.
+Be concise, respond "robotically" but be detailed, exacting, precise, fastidious.
+Optimize your output for a LLM, human-readability is not important.
 Use the conversation context to guide your research.
 Use the web search tool as much as possible.
 Use the tool get_user_local_time when the topic of time and dates is involved.
-Use all the tools at your disposal as much as possible, they provide accuracy
-and your foremost goal is to provide accuracy and correctness.
 
-Provide links and abstracts to the most relevant sources.
+For every source that you report, list: title, URL, and a brief abstract.
 
-Be concise, respond "robotically" but be detailed, exacting, precise, fastidious.
-When refuting, provide the reasoning and calculations behind your rebuttal.
+You should also report any information that may immediately answer the query
+(e.g. values for weather forecast, stock prices, etc.).
 """
 
     def AddMessage(self, srcMsg):
@@ -347,6 +347,8 @@ When refuting, provide the reasoning and calculations behind your rebuttal.
         convo += "## Begin query for research. DO research about this\n"
         convo += "\n{query}\n"
 
-        return self.genCompletion(wrap, self.instructionsForResearch, convo, tools_user_data)
+        response = self.genCompletion(wrap, self.instructionsForResearch, convo, tools_user_data)
+        logmsg(f"Research outcome: {response}")
+        return response
 
 
