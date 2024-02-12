@@ -70,12 +70,19 @@ def get_user_local_time(arguments=None):
 
 def ask_research_assistant(arguments=None):
 
+    # Ensure we have all the necessary args
+    if not (arguments.get("wrap") or
+            arguments.get("query") or
+            arguments.get("tools_user_data")):
+        logerr("Missing arguments for ask_research_assistant")
+        return f"Missing arguments. Got: {arguments}"
+
     msg_thread = super_get_main_MsgThread(arguments)
 
     # If there is no main message thread, then perform a simple web search
     if msg_thread is None or msg_thread.judge is None:
         logwarn("No main message thread or judge found. Falling back to web search.")
-        return ddgsTextSearch(arguments["query"], max_results=10)
+        return ddgsTextSearch(arguments["query"], max_results=5)
 
     return msg_thread.judge.gen_research(
                 wrap=arguments["wrap"],
