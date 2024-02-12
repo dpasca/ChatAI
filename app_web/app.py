@@ -140,6 +140,16 @@ def sess_extend_replies(new_list, session_id):
             for item in new_list:
                 sess.replies.put(item)
 
+def has_usable_msg_thread(session_id=None):
+    if session_id is None:
+        session_id = session.sid
+
+    if session_id not in _app_sessions:
+        return False
+
+    mt = sess_get_msg_thread(session_id)
+    return mt is not None
+
 def local_get_user_info(arguments):
     if 'tools_user_data' not in arguments:
         return 'No user info available'
@@ -317,11 +327,18 @@ def timing_decorator(func):
 #===============================================================================
 @app.route('/get_history', methods=['GET'])
 def get_history():
+    # Send to index page if we don't have a working message thread
+    if not has_usable_msg_thread():
+        return jsonify({'error': 'No message thread loaded, please reload the page.'}), 400
+
     return jsonify({'messages': sess_get_msg_thread().messages})
 
 #===============================================================================
 @app.route('/get_replies', methods=['GET'])
 def get_replies():
+    # Send to index page if we don't have a working message thread
+    if not has_usable_msg_thread():
+        return jsonify({'error': 'No message thread loaded, please reload the page.'}), 400
 
     replies = sess_get_replies()
     send_replies = []
@@ -355,6 +372,10 @@ def get_replies():
 #===============================================================================
 @app.route('/get_addendums', methods=['GET'])
 def get_addendums():
+    # Send to index page if we don't have a working message thread
+    if not has_usable_msg_thread():
+        return jsonify({'error': 'No message thread loaded, please reload the page.'}), 400
+
     # Do we have fact-checks to return
     if ('generate_fchecks' not in session) or not session['generate_fchecks']:
         return jsonify({'addendums': [], 'message': 'No pending fact-checks', 'final': True}), 200
@@ -385,6 +406,10 @@ def get_addendums():
 @app.route('/send_message', methods=['POST'])
 @timing_decorator
 def send_message():
+    # Send to index page if we don't have a working message thread
+    if not has_usable_msg_thread():
+        return jsonify({'error': 'No message thread loaded, please reload the page.'}), 400
+
     msg_text = request.json['message']
     thread_id = session['thread_id']
 

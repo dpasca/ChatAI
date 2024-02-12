@@ -87,7 +87,7 @@ def wait_to_use_thread(wrap, thread_id) -> str:
         status, run_id = get_thread_status(wrap, thread_id)
         if status is None:
             return SUCCESS
-        logwarn(f"Thread status from last run: {status}")
+        logmsg(f"Thread status from last run: {status}")
 
         # Acceptable statuses to continue
         if status in ["completed", "failed", "cancelled", "expired"]:
@@ -147,13 +147,13 @@ def handle_required_action(wrap, run, thread_id, tools_user_data):
             )
 
     # Submit the tool outputs
-    logmsg(f"Tool outputs: {tool_outputs}")
+    logmsg(f"Submitting Tool outputs: {tool_outputs}")
     run = wrap.SubmitToolsOutputs(
         thread_id=thread_id,
         run_id=run.id,
         tool_outputs=tool_outputs,
     )
-    logmsg(f"Run status: {run.status}")
+    logmsg(f"Run Status after tool outputs: {run.status}")
 
 
 #==================================================================
