@@ -127,26 +127,13 @@
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" integrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"
         onload="renderMathInElement(document.body);"></script>
 
+    <script src="static/math_support.js"></script>
     <script src="static/script.js"></script>
 
     <script>
       // Add the messages to the chatbox
       window.onload = function () {
-        // Send the user's time zone and user agent to the server
-        let timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        let userAgent = navigator.userAgent;
-        fetch('/api/user_info', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            timezone: timeZone,
-            user_agent: userAgent
-          })
-        }
-        );
-
+        postUserInfo(); // Initial send of user-info
         //console.log("Loading chat history...");
         fetch('/get_history')
           .then(response => response.json())
@@ -170,6 +157,7 @@
 
         // Erase button
         $('#erase-button').click(function () {
+          postUserInfo(); // Send again the user-info
           fetch('/clear_chat', { method: 'POST' })
             .then(function () {
               $('#chatbox').html('');
