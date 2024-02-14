@@ -57,6 +57,9 @@
             <button id="erase-button" class="btn btn-warning btn-sm mr-2" style="display: none;">Erase Chat</button>
             <button id="reload-button" class="btn btn-info btn-sm" style="display: none;">Reload Chat</button>
           </div>
+          <div id="openai-status-message" class="alert alert-danger" role="alert" style="display: none;">
+            OpenAI API is currently experiencing issues.<br/>Some features may not work as expected.
+          </div>
           <div class="input-group">
             <textarea class="form-control" id="user-input" placeholder="Type a message..."></textarea>
             <div class="input-group-append">
@@ -74,9 +77,27 @@
               return /Mobi|Android/i.test(navigator.userAgent);
             }
 
+            function checkOpenAIStatus() {
+              fetch('https://status.openai.com/api/v2/status.json')
+                .then(response => response.json())
+                .then(data => {
+                  const statusIndicator = data.status.indicator;
+                  if (statusIndicator !== 'none') {
+                    // If the status is not 'none', it means there's some issue, show the warning
+                    document.getElementById('openai-status-message').style.display = 'block';
+                  } else {
+                    // If everything is fine, keep the warning hidden
+                    document.getElementById('openai-status-message').style.display = 'none';
+                  }
+                })
+                .catch(error => console.error('Error fetching OpenAI status:', error));
+            }
+
             // When the DOM is fully loaded...
             document.addEventListener('DOMContentLoaded', (event) => {
               //console.log("DOM fully loaded and parsed");
+
+              checkOpenAIStatus(); // Check OpenAI status
 
               // Check if it's likely a mobile device
               if (!isMobileDevice()) {
