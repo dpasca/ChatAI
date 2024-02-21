@@ -54,8 +54,12 @@
           <!-- Add this button above your input field -->
           <!-- Wrap buttons in a div with d-flex class -->
           <div class="d-flex justify-content-start mb-2">
-            <button id="erase-button" class="btn btn-warning btn-sm mr-2" style="display: none;">Erase Chat</button>
-            <button id="reload-button" class="btn btn-info btn-sm" style="display: none;">Reload Chat</button>
+            <button id="erase-button" data-i18n="erase_chat" class="btn btn-warning btn-sm mr-2" style="display: none;">
+              Erase Chat
+            </button>
+            <button id="reload-button" data-i18n="reload_chat" class="btn btn-info btn-sm" style="display: none;">
+              Reload Chat
+            </button>
           </div>
           <div id="openai-status-message" class="alert alert-danger" role="alert" style="display: none;">
             OpenAI API is currently experiencing issues.<br/>Some features may not work as expected.
@@ -63,11 +67,11 @@
           <div class="input-group">
             <textarea class="form-control" id="user-input" placeholder="Type a message..."></textarea>
             <div class="input-group-append">
-              <button class="btn btn-primary" id="send-button">Send</button>
+              <button class="btn btn-primary" id="send-button" data-i18n="send">Send</button>
             </div>
           </div>
           <div class="footer-info">
-            <p id="input-notice" class="input-notice">Use Shift+Enter to insert a new line</p>
+            <p id="input-notice" data-i18n="use_shift_enter" class="input-notice">Use Shift+Enter to insert a new line</p>
             <p class="version-text">v {{ app_version }}</p>
           </div>
 
@@ -122,6 +126,10 @@
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
 
+    <!-- Include i18next and jquery-i18next from CDN -->
+    <script src="https://unpkg.com/i18next@latest/dist/umd/i18next.js"></script>
+    <script src="https://unpkg.com/jquery-i18next@latest/dist/umd/jquery-i18next.js"></script>
+
     <!-- Include markdown-it from CDN -->
     <script src="https://cdn.jsdelivr.net/npm/markdown-it/dist/markdown-it.min.js"></script>
 
@@ -152,6 +160,36 @@
     <script src="static/script.js"></script>
 
     <script>
+      function updateContent() {
+        $('[data-i18n]').localize();
+      }
+
+      i18next.init({
+        lng: 'it', // replace with the user's language
+        resources: {
+          en: {
+            translation: {
+              "send": "Send",
+              "erase_chat": "Erase Chat",
+              "reload_chat": "Reload Chat",
+              "use_shift_enter": "Use Shift+Enter to insert a new line",
+            }
+          },
+          it: {
+            translation: {
+              "send": "Invia",
+              "erase_chat": "Elimina Chat",
+              "reload_chat": "Ricarica Chat",
+              "use_shift_enter": "Usa Shift+Invio per inserire una nuova riga",
+            }
+          }
+        }
+      }, function(err, t) {
+        // initialized and ready to go!
+        jqueryI18next.init(i18next, $);
+        updateContent();
+      });
+
       // Add the messages to the chatbox
       window.onload = function () {
         postUserInfo(); // Initial send of user-info
