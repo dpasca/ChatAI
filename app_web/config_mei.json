@@ -1,5 +1,5 @@
 {
-    "app_version": "0.0.23",
+    "app_version": "0.0.24",
     "model_version": "gpt-4-turbo-preview",
     "support_model_version": "gpt-3.5-turbo-0125",
     "support_model_temperature": 0.0,
@@ -10,7 +10,8 @@
     "app_title" : "Chat with Mei",
     "navbar_dev" : "NEWTYPE",
     "navbar_dev_url" : "https://newtypekk.com/",
-    "assistant_avatar": "assistant_avatar.jpg",
+    "favicon_name" : "favicon_mei.ico",
+    "assistant_avatar": "assistant_mei_avatar.jpg",
     "assistant_codename": "mei_0005",
-    "assistant_instructions": "assistant_instructions.md"
+    "assistant_instructions": "assistant_mei_instructions.md"
 }

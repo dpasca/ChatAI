@@ -28,8 +28,10 @@ USER_BUCKET_PATH = "user_a_00001"
 ENABLE_SLEEP_LOGGING = False
 
 #===============================================================================
+config_file = os.environ.get("CONFIG_FILE", "config_mei.json")
+
 # Load configuration from config.json
-with open('config.json') as f:
+with open(config_file) as f:
     config = json.load(f)
 
 # Load the instructions
@@ -312,6 +314,7 @@ def index():
                 navbar_dev_url=config["navbar_dev_url"],
                 assistant_name=config["assistant_name"],
                 assistant_avatar=config["assistant_avatar"],
+                favicon_name=config["favicon_name"],
                 app_version=config["app_version"])
 
 #===============================================================================

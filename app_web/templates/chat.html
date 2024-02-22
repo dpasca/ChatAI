@@ -12,7 +12,7 @@
     <link rel="stylesheet" type="text/css" href="/static/style.css">
 
     <!-- Favicon -->
-    <link rel="icon" type="image/png" href="/static/favicon.ico">
+    <link rel="icon" type="image/png" href="/static/{{ favicon_name }}">
 
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
@@ -165,7 +165,7 @@
       }
 
       i18next.init({
-        lng: 'it', // replace with the user's language
+        lng: navigator.language || navigator.languages[0],
         resources: {
           en: {
             translation: {
