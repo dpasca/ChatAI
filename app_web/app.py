@@ -248,6 +248,15 @@ def create_app():
 app = create_app()
 
 #===============================================================================
+@app.after_request
+def after_request_func(response):
+    if os.getenv('DISABLE_CORS') == '1':
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+        response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+    return response
+
+#===============================================================================
 @app.route('/api/user_info', methods=['POST'])
 def user_info():
     # Store the user info in the session
