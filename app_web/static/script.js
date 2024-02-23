@@ -231,7 +231,7 @@ function appendWaitingAssistMessage(assistant_name) {
     var typingDots = '<span>.</span>'.repeat(4);
 
     var typingIndicator = `<div class="ai-message" data-name="${assistant_name}">
-        <b>${assistant_name}</b> is typing<span class="typing-dots">${typingDots}</span>
+        <b>${assistant_name}</b> ${i18next.t('is_typing')}<span class="typing-dots">${typingDots}</span>
     </div>`;
 
     chatBox.innerHTML += typingIndicator;

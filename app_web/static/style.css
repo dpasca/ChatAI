@@ -185,7 +185,8 @@ body.dark-theme .fact-check-expanded {
 
 /* Light theme styles for input */
 #user-input {
-    height: 5em;
+    flex-grow: 1; /* Allows the textarea to grow and fill the horizontal space */
+    height: 1.0em;
     margin-top: 0.3em;
     background-color: #f0f0f0; /* Light background for light theme */
     color: #333; /* Dark text color for light theme */
@@ -200,6 +201,15 @@ body.dark-theme #user-input {
 
 #send-button {
     margin-top: 0.3em;
+}
+
+.input-group {
+    display: flex;
+    align-items: flex-end; /* Aligns children (textarea and button) to the bottom */
+}
+
+.input-group-append {
+    margin-left: 0.3em; /* Adds a little space between the textarea and the button */
 }
 
 .input-notice {

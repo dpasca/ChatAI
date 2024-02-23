@@ -62,12 +62,16 @@
             </button>
           </div>
           <div id="openai-status-message" class="alert alert-danger" role="alert" style="display: none;">
-            OpenAI API is currently experiencing issues.<br/>Some features may not work as expected.
+            <span data-i18n="api_issues"></span>OpenAI API is currently experiencing issues.</span><br/>
+            <span data-i18n="features_may_not_work">Some features may not work as expected.</span>
           </div>
           <div class="input-group">
-            <textarea class="form-control" id="user-input" placeholder="Type a message..."></textarea>
+            <textarea class="form-control" id="user-input" data-i18n="[placeholder]type_a_message"></textarea>
             <div class="input-group-append">
-              <button class="btn btn-primary" id="send-button" data-i18n="send">Send</button>
+              <button class="btn btn-primary" id="send-button">
+                <span class="visually-hidden" data-i18n="send">Send</span>
+                <i class="bi bi-arrow-right"></i>
+              </button>
             </div>
           </div>
           <div class="footer-info">
@@ -173,6 +177,10 @@
               "erase_chat": "Erase Chat",
               "reload_chat": "Reload Chat",
               "use_shift_enter": "Use Shift+Enter to insert a new line",
+              "type_a_message": "Type a message...",
+              "is_typing": "is typing...",
+              "api_issues": "OpenAI API is currently experiencing issues.",
+              "features_may_not_work": "Some features may not work as expected.",
             }
           },
           it: {
@@ -181,6 +189,10 @@
               "erase_chat": "Elimina Chat",
               "reload_chat": "Ricarica Chat",
               "use_shift_enter": "Usa Shift+Invio per inserire una nuova riga",
+              "type_a_message": "Scrivi un messaggio...",
+              "is_typing": "sta scrivendo...",
+              "api_issues": "L'API di OpenAI sta attualmente riscontrando problemi.",
+              "features_may_not_work": "Alcune funzionalità potrebbero non funzionare come previsto.",
             }
           }
         }
@@ -318,11 +330,29 @@
           localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
       }
 
-
       window.addEventListener('load', function() {
         var navbarHeight = document.querySelector('.navbar').offsetHeight;
         navbarHeight += 8; // Add some padding
         document.body.style.paddingTop = navbarHeight + 'px';
+      });
+
+      function autoGrowTextArea(textArea, maxHeight) {
+          textArea.style.overflowY = 'hidden'; // Prevent scrollbar from flashing during size adjustment
+          textArea.style.height = (textArea.scrollHeight) + 'px';
+
+          if (textArea.scrollHeight > maxHeight) {
+              textArea.style.overflowY = 'auto'; // Enable scrollbar if content exceeds max height
+              textArea.style.height = maxHeight + 'px';
+          }
+      }
+
+      // Select your textarea element
+      const textArea = document.getElementById('user-input');
+      const maxHeight = 200; // Maximum height in pixels
+
+      // Event listener for input on textarea
+      textArea.addEventListener('input', function() {
+          autoGrowTextArea(this, maxHeight);
       });
     </script>
   </body>
