@@ -289,9 +289,16 @@
       });
 
       function initializeTheme() {
-          const isDarkTheme = localStorage.getItem('theme') === 'dark' || !localStorage.getItem('theme');
-          // Apply initial theme state without toggling
-          applyTheme(isDarkTheme);
+        let isDarkTheme;
+        // Check if the theme was previously saved in localStorage
+        if (localStorage.getItem('theme')) {
+          isDarkTheme = localStorage.getItem('theme') === 'dark';
+        } else {
+          // If not, use the system's theme
+          isDarkTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        }
+        // Apply initial theme state without toggling
+        applyTheme(isDarkTheme);
       }
 
       function toggleTheme() {
