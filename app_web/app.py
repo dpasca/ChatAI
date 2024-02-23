@@ -28,6 +28,11 @@ USER_BUCKET_PATH = "user_a_00001"
 ENABLE_SLEEP_LOGGING = False
 
 #===============================================================================
+# Load the environment variables, override the existing ones
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
+#===============================================================================
 config_file = os.environ.get("CONFIG_FILE", "config_mei.json")
 
 # Load configuration from config.json
@@ -201,8 +206,15 @@ def save_session():
     session.modified = True
 
 #===============================================================================
-logmsg("Creating storage...")
-_storage = Storage(os.getenv("DO_STORAGE_CONTAINER"))
+_storage = None
+if os.getenv("DO_STORAGE_CONTAINER") is not None:
+    logmsg("Creating storage...")
+    _storage = Storage(
+        bucket=os.getenv("DO_STORAGE_CONTAINER"),
+        access_key=os.getenv("DO_SPACES_ACCESS_KEY"),
+        secret_key=os.getenv("DO_SPACES_SECRET_KEY"),
+        endpoint=os.getenv("DO_STORAGE_SERVER"))
+
 
 # Create the assistant
 logmsg("Creating assistant...")
@@ -284,6 +296,10 @@ def make_file_url(file_id, simple_name):
 
     # Out path in the storage is a mix of user ID, file ID and human-readable name
     file_path = f"{USER_BUCKET_PATH}/{new_name}"
+
+    if _storage is None:
+        logerr(f"Storage not available for file {file_id} with path {file_path}")
+        return file_path
 
     if not _storage.FileExists(file_path):
         logmsg(f"Downloading file {file_id} from source...")

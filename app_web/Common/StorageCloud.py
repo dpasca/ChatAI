@@ -10,8 +10,11 @@ from botocore.exceptions import ClientError
 from .logger import *
 
 class StorageCloud:
-    def __init__(self, bucket):
+    def __init__(self, bucket, access_key, secret_key, endpoint):
         self.bucket = bucket
+        self.access_key = access_key
+        self.secret_key = secret_key
+        self.endpoint = endpoint
         self.s3 = self.createStorage()
 
     def createStorage(self):
