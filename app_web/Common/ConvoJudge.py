@@ -5,11 +5,9 @@
 # Description: A judge for conversations
 #==================================================================
 
-import re
 import json
 from .logger import *
 from .OpenAIWrapper import OpenAIWrapper
-from . import AssistTools
 
 class ConvoJudge:
     def __init__(self, model, temperature):
@@ -123,82 +121,12 @@ telling them to follow some links.
             convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
         return convo
 
-    @staticmethod
-    def apply_tools(response, wrap, tools_user_data) -> list:
-        response_msg = response.choices[0].message
-        calls = response_msg.tool_calls
-        logmsg(f"Tool calls: {calls}")
-        # Check if the model wanted to call a function
-        if not calls:
-            return []
-
-        messages = []
-        # Extend conversation with assistant's reply
-        messages.append(response_msg)
-
-        # Process each tool/function call
-        for call in calls:
-            name = call.function.name
-            args = json.loads(call.function.arguments)
-
-            logmsg(f"Tool call: {name}({args})")
-
-            # Add wrap and tools_user_data to the arguments
-            args["wrap"] = wrap
-            args["tools_user_data"] = tools_user_data
-
-            # Look up the function in the dictionary and call it
-            if name in AssistTools.tool_items_dict:
-                function_response = AssistTools.tool_items_dict[name].function(args)
-            else:
-                function_response = AssistTools.fallback_tool_function(name, args)
-
-            # Extend conversation with function response
-            messages.append({
-                "tool_call_id": call.id,
-                "role": "tool",
-                "name": name,
-                "content": json.dumps(function_response),
-            })
-
-        return messages
-
     def genCompletion(self, wrap, instructions, convo, tools_user_data=None):
-        # Setup the tools
-        tools = []
-        #tools.append({"type": "code_interpreter"})
-        #tools.append({"type": "retrieval"})
-        for item in AssistTools.tool_items:
-            if not item.requires_assistant:
-                tools.append({ "type": "function", "function": item.definition })
-
-        #print(f"Sending Conversation:\n{convo}\n------")
-        messages = [
-            {"role": "system", "content": instructions},
-            {"role": "user",   "content": convo}
-        ]
-        # Generate the first response
-        response = wrap.CreateCompletion(
-            model=self.model,
-            temperature=self.temperature,
-            messages=messages,
-            tools=tools,
-        )
-
-        # See if there are any tools to apply
-        if (new_messages := ConvoJudge.apply_tools(response, wrap, tools_user_data)):
-            logmsg(f"Applying tools: {new_messages}")
-            messages += new_messages
-            logmsg(f"New conversation with tool answers: {messages}")
-            # Post-function-call conversation
-            post_tool_response = wrap.CreateCompletion(
-                model=self.model,
-                temperature=self.temperature,
-                messages=messages,
-            )
-            return post_tool_response.choices[0].message.content
-
-        return response.choices[0].message.content
+        from .OAIUtils import completion_with_tools
+        return completion_with_tools(
+                wrap, self.model, self.temperature, instructions,
+                [{"role": "user", "content": convo}],
+                tools_user_data)
 
     def gen_completion_ret_json(self, wrap, instructions, convo, tools_user_data=None):
         response = self.genCompletion(wrap, self.instructionsForFactCheck, convo, tools_user_data)

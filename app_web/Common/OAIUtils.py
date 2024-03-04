@@ -7,74 +7,94 @@
 
 import re
 from .logger import *
+import json
+from .OpenAIWrapper import OpenAIWrapper
+from . import AssistTools
+from typing import List, Dict
 
-def IsImageAnnotation(a) -> bool:
-    return a.type == "file_path" and a.text.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
+#==================================================================
+def apply_tools(response, wrap, tools_user_data) -> list:
+    response_msg = response.choices[0].message
+    calls = response_msg.tool_calls
+    logmsg(f"Tool calls: {calls}")
+    # Check if the model wanted to call a function
+    if not calls:
+        return []
 
-# Replace the file paths with actual URLs
-def ResolveImageAnnotations(out_msg, annotations, make_file_url) -> str:
-    new_msg = out_msg
-    # Sort annotations by start_index in descending order
-    sorted_annotations = sorted(annotations, key=lambda x: x.start_index, reverse=True)
+    messages = []
+    # Extend conversation with assistant's reply
+    messages.append(response_msg)
 
-    for a in sorted_annotations:
-        if IsImageAnnotation(a):
-            file_id = a.file_path.file_id
+    # Process each tool/function call
+    for call in calls:
+        name = call.function.name
+        args = json.loads(call.function.arguments)
 
-            logmsg(f"Found file {file_id} associated with '{a.text}'")
+        logmsg(f"Tool call: {name}({args})")
 
-            # Extract a "simple name" from the annotation text
-            # It's likely to be a full-pathname, so we just take the last part
-            # If there are no slashes, we take the whole name
-            simple_name = a.text.split('/')[-1] if '/' in a.text else a.text
-            # Replace any characters that are not alphanumeric, underscore, or hyphen with an underscore
-            simple_name = re.sub(r'[^\w\-.]', '_', simple_name)
+        # Add wrap and tools_user_data to the arguments
+        args["wrap"] = wrap
+        args["tools_user_data"] = tools_user_data
 
-            file_url = make_file_url(file_id, simple_name)
+        # Look up the function in the dictionary and call it
+        if name in AssistTools.tool_items_dict:
+            function_response = AssistTools.tool_items_dict[name].function(args)
+        else:
+            function_response = AssistTools.fallback_tool_function(name, args)
 
-            logmsg(f"Replacing file path {a.text} with URL {file_url}")
+        # Extend conversation with function response
+        messages.append({
+            "tool_call_id": call.id,
+            "role": "tool",
+            "name": name,
+            "content": json.dumps(function_response),
+        })
 
-            # Replace the file path with the file URL
-            new_msg = new_msg[:a.start_index] + file_url + new_msg[a.end_index:]
+    return messages
 
-    return new_msg
+#==================================================================
+def completion_with_tools(
+        wrap: OpenAIWrapper,
+        model : str,
+        temperature : float,
+        instructions : str,
+        role_and_content_msgs : List[Dict[str, str]],
+        tools_user_data=None
+        ) -> str:
 
-def ResolveCiteAnnotations(out_msg, annotations, wrap) -> str:
-    citations = []
-    for index, a in enumerate(annotations):
+    # Setup the tools
+    tools = []
+    #tools.append({"type": "code_interpreter"})
+    #tools.append({"type": "retrieval"})
+    for item in AssistTools.tool_items:
+        if not item.requires_assistant:
+            tools.append({ "type": "function", "function": item.definition })
 
-        #if IsImageAnnotation(a):
-        #    continue
+    messages = [
+        {"role": "system", "content": instructions},
+    ]
+    messages += role_and_content_msgs
 
-        logmsg(f"Found citation '{a.text}'")
-        logmsg(f"out_msg: {out_msg}")
-        # Replace the text with a footnote
-        out_msg = out_msg.replace(a.text, f' [{index}]')
+    # Generate the first response
+    response = wrap.CreateCompletion(
+        model=model,
+        temperature=temperature,
+        messages=messages,
+        tools=tools,
+    )
 
-        logmsg(f"out_msg: {out_msg}")
+    # See if there are any tools to apply
+    if (new_messages := apply_tools(response, wrap, tools_user_data)):
+        logmsg(f"Applying tools: {new_messages}")
+        messages += new_messages
+        logmsg(f"New conversation with tool answers: {messages}")
+        # Post-function-call conversation
+        post_tool_response = wrap.CreateCompletion(
+            model=model,
+            temperature=temperature,
+            messages=messages,
+        )
+        return post_tool_response.choices[0].message.content
 
-        # Gather citations based on annotation attributes
-        if (file_citation := getattr(a, 'file_citation', None)):
-            logmsg(f"file_citation: {file_citation}")
-            cited_file = wrap.client.files.retrieve(file_citation.file_id)
-            citations.append(f'[{index}] {file_citation.quote} from {cited_file.filename}')
-        elif (file_path := getattr(a, 'file_path', None)):
-            logmsg(f"file_path: {file_path}")
-            cited_file = wrap.client.files.retrieve(file_path.file_id)
-            citations.append(f'[{index}] Click <here> to download {cited_file.filename}')
-            # Note: File download functionality not implemented above for brevity
-
-    # Add footnotes to the end of the message before displaying to user
-    if len(citations) > 0:
-        out_msg += '\n' + '\n'.join(citations)
-
-    return out_msg
-
-# Deal with the bug where empty annotations are added to the message
-# We go and remove all 【*†*】blocks
-def StripEmptyAnnotationsBug(out_msg) -> str:
-    # This pattern matches 【*†*】blocks
-    pattern = r'【\d+†.*?】'
-    # Remove all occurrences of the pattern
-    return re.sub(pattern, '', out_msg)
+    return response.choices[0].message.content
 

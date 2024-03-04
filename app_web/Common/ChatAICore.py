@@ -9,7 +9,6 @@ import json
 import time
 from .logger import *
 from . import AssistTools
-from . import OAIUtils
 from . import OpenAIWrapper
 from . import MsgThread
 

@@ -9,10 +9,9 @@ import json
 import time
 from .logger import *
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Any
 from .OpenAIWrapper import OpenAIWrapper
-from .ConvoJudge import ConvoJudge
-from . import OAIUtils
+from . import AnnotUtils
 
 META_TAG = "message_meta"
 
@@ -59,17 +58,17 @@ def MessageToLocMessage(wrap, message, make_file_url):
 
                 logmsg(f"Annotations: {content.text.annotations}")
 
-                out_msg = OAIUtils.ResolveImageAnnotations(
+                out_msg = AnnotUtils.ResolveImageAnnotations(
                     out_msg=out_msg,
                     annotations=content.text.annotations,
                     make_file_url=make_file_url)
 
-                out_msg = OAIUtils.ResolveCiteAnnotations(
+                out_msg = AnnotUtils.ResolveCiteAnnotations(
                     out_msg=out_msg,
                     annotations=content.text.annotations,
                     wrap=wrap)
 
-                out_msg = OAIUtils.StripEmptyAnnotationsBug(out_msg)
+                out_msg = AnnotUtils.StripEmptyAnnotationsBug(out_msg)
 
             result["content"].append({
                 "value": out_msg,
@@ -94,7 +93,7 @@ class MsgThread(BaseModel):
     wrap: OpenAIWrapper
     thread_id: str
     messages: List[str] = []
-    judge: Optional[ConvoJudge] = None
+    judge: Optional[Any] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -158,6 +157,7 @@ class MsgThread(BaseModel):
         return len(new_oai_messages)
  
     def create_judge(self, model, temperature):
+        from .ConvoJudge import ConvoJudge
         self.judge = ConvoJudge(model=model, temperature=temperature)
         for msg in self.messages:
             self.judge.AddMessage(msg)
