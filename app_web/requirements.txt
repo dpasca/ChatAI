@@ -1,6 +1,7 @@
 # Requirements for the Web App !
 flask
 Flask-Session
+flask_cors
 openai
 duckduckgo_search
 python-dotenv

@@ -10,6 +10,7 @@ import json
 import time
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_session import Session
+from flask_cors import CORS
 import datetime
 from datetime import datetime
 import inspect
@@ -231,14 +232,29 @@ def create_app():
     app = Flask(__name__)
     app.secret_key = os.environ.get("CHATAI_FLASK_SECRET_KEY")
 
-    global ENABLE_LOGGING
-    if app.debug:
-        ENABLE_LOGGING = True
+    # Determine running environment
+    is_production = os.getenv('FLASK_ENV') == 'production'
 
-    if ENABLE_LOGGING:
-        print("Logging is ENABLED")
+    # Read the CORS_ORIGINS environment variable
+    cors_origins_env = os.getenv('CORS_ORIGINS', '*')
 
-    # Serve-side session
+    # Check if CORS_ORIGINS is set to a wildcard or a list of domains
+    if cors_origins_env == '*' and not is_production:
+        # Allow all origins in non-production environments
+        cors_origins = cors_origins_env
+    else:
+        # Split the CORS_ORIGINS variable into a list
+        cors_origins = cors_origins_env.split(',')
+
+    # Configure CORS with the parsed origins or wildcard
+    CORS(app, origins=cors_origins, supports_credentials=True)
+
+    # Configure session cookies for cross-origin compatibility
+    app.config['SESSION_COOKIE_SECURE'] = is_production
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'None' if is_production else 'Lax'
+
+    # Server-side session configuration
     app.config['SESSION_TYPE'] = 'filesystem'
     app.config.from_object(__name__)
     Session(app)
