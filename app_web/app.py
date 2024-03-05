@@ -20,7 +20,7 @@ import threading
 from Common.OpenAIWrapper import OpenAIWrapper
 from Common.StorageCloud import StorageCloud as Storage
 from Common.logger import *
-from Common.OAIUtils import *
+from Common import OAIUtils
 from Common import ChatAICore
 from Common.MsgThread import MsgThread
 
@@ -185,12 +185,10 @@ def createThread(force_new=False) -> None:
         sess_set_msg_thread(mt)
         logmsg("Retrieved existing thread with ID " + mt.thread_id)
 
-    # Get our cached thread messages
-    if 'msg_thread_data' in session:
+    # If there aren't any messages in the thread, see if we have some in the session
+    if len(mt.messages) == 0 and 'msg_thread_data' in session:
         mt.deserialize_data(session['msg_thread_data'])
 
-    new_n = mt.fetch_new_messages(make_file_url)
-    print(f"Found {new_n} new messages in the thread history")
     save_session()
 
     # Create the sub-agents system for the message-thread
@@ -438,49 +436,29 @@ def send_message():
         return jsonify({'error': 'No message thread loaded, please reload the page.'}), 400
 
     msg_text = request.json['message']
-    thread_id = session['thread_id']
+    #thread_id = session['thread_id']
 
     # Create the user message
-    user_msg = ChatAICore.create_user_message(_oa_wrap, thread_id, msg_text, make_file_url)
-    # Add the message to the thread
-    sess_get_msg_thread().add_message(user_msg)
+    user_msg = sess_get_msg_thread().create_message(
+        role="user",
+        content=ChatAICore.instrument_user_message(msg_text))
 
-    def send_message_task(thread_id, user_msg_id, session_id):
-        def on_replies(src_replies: list):
-            sess_extend_replies(src_replies, session_id)
+    assist_str = OAIUtils.completion_with_tools(
+        wrap=_oa_wrap,
+        model=config["model_version"],
+        temperature=config["model_temperature"],
+        instructions=ChatAICore.instrument_instructions(assistant_instructions),
+        role_and_content_msgs=sess_get_msg_thread().make_messages_for_completion(20),
+        tools_user_data=session.sid)
 
-        # Send the user message and get the replies
-        ret_val = ChatAICore.SendUserMessage(
-            wrap=_oa_wrap,
-            last_message_id=user_msg_id,
-            assistant_id=_assistant.id,
-            thread_id=thread_id,
-            make_file_url=make_file_url,
-            on_replies=on_replies,
-            tools_user_data=session_id)
-
-        # Mark the completion of message processing
-        replies = sess_get_replies(session_id)
-
-        if ret_val == ChatAICore.ERR_THREAD_EXPIRED:
-            with replies.lock:
-                replies.put('ERR_THREAD_EXPIRED')
-
-        with replies.lock:
-            replies.put('END')
-
-        if ret_val != ChatAICore.SUCCESS:
-            logerr(f"Error sending user message: {ret_val}")
+    assist_msg = sess_get_msg_thread().create_message(
+        role="assistant",
+        content=assist_str)
 
     # Create a new queue for this message thread
     sess_set_replies(TaskQueue(start_time=int(time.time())))
-
-    # NOTE: this `thread` is not the same as `thread_id` above,
-    #  it's a Python thread, while `thread_id` is the OpenAI thread ID
-    thread = threading.Thread(
-                target=send_message_task,
-                args=(thread_id, user_msg['src_id'], session.sid))
-    thread.start()
+    sess_extend_replies([assist_msg], session.sid)
+    sess_extend_replies(['END'], session.sid)
 
     # Respond with a "processing" status and with the user message ID
     # We need the user message ID to match the addendums/fact-checks

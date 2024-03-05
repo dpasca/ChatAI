@@ -48,6 +48,12 @@ def SetSleepForAPI(sleepForAPI_: Callable[[], None]):
 def prepareUserMessageMeta():
     return f"<{MsgThread.META_TAG}>\nunix_time: {int(time.time())}\n</{MsgThread.META_TAG}>\n"
 
+def instrument_user_message(msg_text):
+    return prepareUserMessageMeta() + msg_text
+
+def instrument_instructions(msg_text):
+    return msg_text + "\n" + MESSAGEMETA_INSTUCT + "\n" + FORMAT_INSTRUCT
+
 #==================================================================
 # Possible run statuses:
 #  in_progress, requires_action, cancelling, cancelled, failed, completed, or expired
@@ -159,8 +165,6 @@ def handle_required_action(wrap, run, thread_id, tools_user_data):
 def create_user_message(wrap, thread_id, msg_text, make_file_url):
     msg_with_meta = prepareUserMessageMeta() + msg_text
     logmsg(f"Creating user message: {msg_with_meta}")
-
-    oai_msg = wrap.CreateMessage(thread_id=thread_id, role="user", content=msg_text)
     return MsgThread.MessageToLocMessage(wrap, oai_msg, make_file_url)
 
 def SendUserMessage(
