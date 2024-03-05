@@ -205,8 +205,11 @@
       // Add the messages to the chatbox
       window.onload = function () {
         postUserInfo(); // Initial send of user-info
-        //console.log("Loading chat history...");
-        fetch('/get_history')
+        console.log("Loading chat history...");
+        fetch('/get_history', {
+          method: "GET",
+          credentials: 'include'
+        })
           .then(response => response.json())
           .then(data => {
             messages = data.messages;
@@ -229,7 +232,10 @@
         // Erase button
         $('#erase-button').click(function () {
           postUserInfo(); // Send again the user-info
-          fetch('/clear_chat', { method: 'POST' })
+          fetch('/clear_chat', {
+            method: 'POST',
+            credentials: 'include'
+           })
             .then(function () {
               $('#chatbox').html('');
               showHideButton('erase-button', false);

@@ -15,6 +15,7 @@ let timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 let userAgent = navigator.userAgent;
 fetch('/api/user_info', {
     method: 'POST',
+    credentials: 'include',
     headers: {
     'Content-Type': 'application/json'
     },
@@ -292,6 +293,7 @@ function sendMessage(userInput, assistant_name) {
     //console.log("Sending message:", userInput);
     fetch('/send_message', {
         method: 'POST',
+        credentials: 'include',
         body: JSON.stringify({ 'message': userInput }),
         headers: {
             'Content-Type': 'application/json'
@@ -334,7 +336,10 @@ function sendMessage(userInput, assistant_name) {
 
 // Poll for replies from the server
 function pollForReplies(assistant_name) {
-    fetch('/get_replies')
+    fetch('/get_replies', {
+        method: 'GET',
+        credentials: 'include'
+    })
     .then(response => {
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -377,7 +382,10 @@ function pollForReplies(assistant_name) {
 }
 
 function pollForAddendums() {
-    fetch('/get_addendums')
+    fetch('/get_addendums', {
+        method: 'GET',
+        credentials: 'include'
+    })
     .then(response => {
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
