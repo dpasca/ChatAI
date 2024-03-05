@@ -47,16 +47,6 @@ with open(config['assistant_instructions'], 'r') as f:
 _oa_wrap = OpenAIWrapper(api_key=os.environ.get("OPENAI_API_KEY"))
 
 #===============================================================================
-def sleepForAPI():
-    if ENABLE_LOGGING and ENABLE_SLEEP_LOGGING:
-        caller = inspect.currentframe().f_back.f_code.co_name
-        line = inspect.currentframe().f_back.f_lineno
-        print(f"[{caller}:{line}] sleeping...")
-    time.sleep(0.5)
-
-ChatAICore.SetSleepForAPI(sleepForAPI)
-
-#===============================================================================
 from queue import Queue
 import time
 
@@ -171,8 +161,8 @@ def local_get_main_MsgThread(arguments):
 
 # Create the thread if it doesn't exist
 def createThread(force_new=False) -> None:
-    # Create or get the thread
-    if ('thread_id' not in session) or force_new:
+
+    def create_new():
         mt = MsgThread.create_thread(_oa_wrap)
         sess_set_msg_thread(mt)
         logmsg("Creating new thread with ID " + mt.thread_id)
@@ -180,6 +170,11 @@ def createThread(force_new=False) -> None:
         session['thread_id'] = mt.thread_id
         if 'msg_thread_data' in session:
             del session['msg_thread_data']
+        return mt
+
+    # Create or get the thread
+    if ('thread_id' not in session) or force_new:
+        mt = create_new()
     else:
         mt = MsgThread.from_thread_id(_oa_wrap, session['thread_id'])
         sess_set_msg_thread(mt)
@@ -188,6 +183,10 @@ def createThread(force_new=False) -> None:
     # If there aren't any messages in the thread, see if we have some in the session
     if len(mt.messages) == 0 and 'msg_thread_data' in session:
         mt.deserialize_data(session['msg_thread_data'])
+        # If there aren't any messages in the session, then we create a new thread
+        if len(mt.messages) == 0:
+            logmsg("No messages in the session, creating a new thread")
+            mt = create_new()
 
     save_session()
 
@@ -212,16 +211,6 @@ if os.getenv("DO_STORAGE_CONTAINER") is not None:
         access_key=os.getenv("DO_SPACES_ACCESS_KEY"),
         secret_key=os.getenv("DO_SPACES_SECRET_KEY"),
         endpoint=os.getenv("DO_STORAGE_SERVER"))
-
-
-# Create the assistant
-logmsg("Creating assistant...")
-_assistant = ChatAICore.create_assistant(
-                wrap=_oa_wrap,
-                config=config,
-                instructions=assistant_instructions,
-                get_main_MsgThread=local_get_main_MsgThread,
-                get_user_info=local_get_user_info)
 
 #===============================================================================
 # Initialize Flask app
@@ -327,9 +316,6 @@ def index():
     print(f"Welcome to {config['app_title']}, v{config['app_version']}")
     print(f"Assistant: {config['assistant_name']}")
 
-    # Process the history messages
-    print(f"Total history messages: {len(sess_get_msg_thread().messages)}")
-
     return render_template(
                 'chat.html',
                 app_title=config["app_title"],
@@ -357,7 +343,7 @@ def get_history():
     if not has_usable_msg_thread():
         return jsonify({'error': 'No message thread loaded, please reload the page.'}), 400
 
-    return jsonify({'messages': sess_get_msg_thread().messages})
+    return jsonify({'messages': sess_get_msg_thread().make_messages_for_display()}), 200
 
 #===============================================================================
 @app.route('/get_replies', methods=['GET'])
@@ -441,7 +427,7 @@ def send_message():
     # Create the user message
     user_msg = sess_get_msg_thread().create_message(
         role="user",
-        content=ChatAICore.instrument_user_message(msg_text))
+        content=MsgThread.instrument_user_message(msg_text))
 
     assist_str = OAIUtils.completion_with_tools(
         wrap=_oa_wrap,
@@ -454,6 +440,8 @@ def send_message():
     assist_msg = sess_get_msg_thread().create_message(
         role="assistant",
         content=assist_str)
+
+    save_session()
 
     # Create a new queue for this message thread
     sess_set_replies(TaskQueue(start_time=int(time.time())))

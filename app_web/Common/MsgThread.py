@@ -12,82 +12,8 @@ from .logger import *
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Any
 from .OpenAIWrapper import OpenAIWrapper
-from . import AnnotUtils
 
 META_TAG = "message_meta"
-
-def stripUserMessageMeta(msg_with_meta):
-    msg = msg_with_meta
-    begin_tag = f"<{META_TAG}>"
-    end_tag = f"</{META_TAG}>"
-    end_tag_len = len(end_tag)
-
-    while True:
-        start = msg.find(begin_tag)
-        if start == -1:
-            break
-        end = msg.find(end_tag, start)
-        if end == -1:
-            break
-
-        # Check if the character following the end tag is a newline
-        if msg[end + end_tag_len:end + end_tag_len + 1] == "\n":
-            msg = msg[:start] + msg[end + end_tag_len + 1:]
-        else:
-            msg = msg[:start] + msg[end + end_tag_len:]
-
-    return msg
-
-#==================================================================
-def MessageToLocMessage(wrap, message, make_file_url):
-    result = {
-        "src_id": message.id,
-        "created_at": message.created_at,
-        "role": message.role,
-        "content": []
-    }
-    for content in message.content:
-        if content.type == "text":
-
-            # Strip the message meta if it's a user message
-            out_msg = content.text.value
-            if message.role == "user":
-                out_msg = stripUserMessageMeta(out_msg)
-
-            # Apply whatever annotations may be there
-            if content.text.annotations is not None:
-
-                logmsg(f"Annotations: {content.text.annotations}")
-
-                out_msg = AnnotUtils.ResolveImageAnnotations(
-                    out_msg=out_msg,
-                    annotations=content.text.annotations,
-                    make_file_url=make_file_url)
-
-                out_msg = AnnotUtils.ResolveCiteAnnotations(
-                    out_msg=out_msg,
-                    annotations=content.text.annotations,
-                    wrap=wrap)
-
-                out_msg = AnnotUtils.StripEmptyAnnotationsBug(out_msg)
-
-            result["content"].append({
-                "value": out_msg,
-                "type": content.type
-            })
-        elif content.type == "image_file":
-            # Append the content with the image URL
-            result["content"].append({
-                "value": make_file_url(content.image_file.file_id, "image.png"),
-                "type": content.type
-            })
-        else:
-            result["content"].append({
-                "value": "<Unknown content type>",
-                "type": "text"
-            })
-    return result
-
 
 class MsgThread(BaseModel):
     wrap: OpenAIWrapper
@@ -114,6 +40,34 @@ class MsgThread(BaseModel):
         return json.dumps({
             'thread_id': self.thread_id,
             'messages': serializable_messages})
+
+    @staticmethod
+    def instrument_user_message(msg_text):
+        return f"<{META_TAG}>\nunix_time: {int(time.time())}\n</{META_TAG}>\n{msg_text}"
+
+    @staticmethod
+    def deinstrument_user_message(msg_with_meta):
+        msg = msg_with_meta
+        begin_tag = f"<{META_TAG}>"
+        end_tag = f"</{META_TAG}>"
+        end_tag_len = len(end_tag)
+
+        while True:
+            start = msg.find(begin_tag)
+            if start == -1:
+                break
+            end = msg.find(end_tag, start)
+            if end == -1:
+                break
+
+            # Check if the character following the end tag is a newline
+            if msg[end + end_tag_len:end + end_tag_len + 1] == "\n":
+                msg = msg[:start] + msg[end + end_tag_len + 1:]
+            else:
+                msg = msg[:start] + msg[end + end_tag_len:]
+
+        return msg
+
 
     def message_to_dict(self, message):
         # Convert each content item in the list to its dictionary representation
@@ -172,6 +126,12 @@ class MsgThread(BaseModel):
         self.add_message(message)
         return message
 
+    def create_user_message(self, content) -> dict:
+        return self.create_message("user", MsgThread.instrument_user_message(content))
+
+    def create_assistant_message(self, content) -> dict:
+        return self.create_message("assistant", content)
+
     def add_message(self, msg):
         if not self.is_valid_message(msg):
             logerr(f"Invalid message format: {msg}. Ignoring.")
@@ -213,3 +173,32 @@ class MsgThread(BaseModel):
                       result[KEEP_HEAD_N:])
 
         return result
+
+    def make_messages_for_display(self):
+        # Return the messages, only modifying the user messages to remove the metadata
+        result = []
+        for msg in self.messages:
+            # Check if it's a user message and remove metadata
+            if msg['role'] == 'user':
+                cleaned_content = []
+                for c in msg['content']:
+                    if c['type'] == 'text':
+                        # Remove instrumented meta from the user message
+                        cleaned_text = MsgThread.deinstrument_user_message(c['value'])
+                        cleaned_content.append({'type': 'text', 'value': cleaned_text})
+                    else:
+                        # If not text, add as is
+                        cleaned_content.append(c)
+
+                result.append({
+                    'src_id': msg['src_id'],
+                    'created_at': msg['created_at'],
+                    'role': msg['role'],
+                    'content': cleaned_content
+                })
+            else:
+                # For non-user messages, add as is
+                result.append(msg)
+
+        return result
+
