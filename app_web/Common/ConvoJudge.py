@@ -124,9 +124,13 @@ telling them to follow some links.
     def genCompletion(self, wrap, instructions, convo, tools_user_data=None):
         from .OAIUtils import completion_with_tools
         return completion_with_tools(
-                wrap, self.model, self.temperature, instructions,
-                [{"role": "user", "content": convo}],
-                tools_user_data)
+                wrap=wrap,
+                model=self.model,
+                temperature=self.temperature,
+                instructions=instructions,
+                role_and_content_msgs=[{"role": "user", "content": convo}],
+                tools_user_data=tools_user_data,
+                stream=False)
 
     def gen_completion_ret_json(self, wrap, instructions, convo, tools_user_data=None):
         response = self.genCompletion(wrap, self.instructionsForFactCheck, convo, tools_user_data)
