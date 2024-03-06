@@ -61,9 +61,13 @@
               Reload Chat
             </button>
           </div>
+          <!-- Status message relative to the OpenAI API -->
           <div id="openai-status-message" class="alert alert-danger" role="alert" style="display: none;">
             <span data-i18n="api_issues"></span>OpenAI API is currently experiencing issues.</span><br/>
             <span data-i18n="features_may_not_work">Some features may not work as expected.</span>
+          </div>
+          <!-- Status message for generic errors -->
+          <div id="error-status-message" class="alert alert-danger" role="alert" style="display: none;">
           </div>
           <div class="input-group">
             <textarea class="form-control" id="user-input" data-i18n="[placeholder]type_a_message"></textarea>
@@ -366,6 +370,70 @@
       // Event listener for input on textarea
       textArea.addEventListener('input', function() {
           autoGrowTextArea(this, maxHeight);
+      });
+    </script>
+
+    <!-- Socket.IO client -->
+    <script src="https://cdn.socket.io/4.4.0/socket.io.min.js"></script>
+
+    <script type="text/javascript">
+      function getCookie(name) {
+          let cookieArray = document.cookie.split(';'); // Split the cookie string into individual name=value pairs
+
+          for(let i = 0; i < cookieArray.length; i++) {
+              let cookiePair = cookieArray[i].trim().split('='); // Split each pair into an array
+
+              // Decode the cookie name and compare it to the given name
+              if (decodeURIComponent(cookiePair[0]) === name) {
+                  return decodeURIComponent(cookiePair[1]); // Return the value of the found cookie
+              }
+          }
+
+          console.error('Cookie with name ' + name + ' not found.');
+          return null;
+      }
+
+      // Connect to the server's socket
+      var socket = io({
+          query: {
+              customClientId: getCookie('CustomClientId') // Assuming you have a function to get cookies by name
+          }
+      });
+
+      // Listen for the 'stream' event which will receive messages from the server
+      socket.on('stream', function(data) {
+        function onStreamEnd() {
+          console.log('End of message stream.');
+          document.getElementById('user-input').disabled = false; // Enable input box
+          document.getElementById('send-button').disabled = false; // Enable send button
+          removeWaitingAssistMessage(); // Remove the waiting message
+          showHideButton('erase-button', true);
+        }
+
+        // Check if we have 'error' and it's true
+        if (data.isError) {
+          onStreamEnd();
+
+          var elem = document.getElementById('error-status-message');
+          elem.style.display = 'block';
+          elem.innerHTML = data.text ? data.text : 'An error occurred.';
+        }
+        else
+        if (data.text == 'END') {
+          onStreamEnd();
+          pollForAddendums(); // Start polling for addendums
+        } else {
+          // Append received message part to the chatbox
+          appendMessage({role: 'assistant', content: [{type: 'text', value: data.text}]}, "{{ assistant_name }}");
+        }
+      });
+
+      // If there is an established connection, handle it
+      socket.on('connected', function(data) {
+        console.log('Connected with custom_client_id', data.custom_client_id);
+        if (getCookie('CustomClientId') !== data.custom_client_id) {
+          console.error('CustomClientId cookie does not match the one received from the server.');
+        }
       });
     </script>
   </body>

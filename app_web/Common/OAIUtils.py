@@ -59,7 +59,8 @@ def completion_with_tools(
         temperature : float,
         instructions : str,
         role_and_content_msgs : List[Dict[str, str]],
-        tools_user_data=None
+        tools_user_data=None,
+        stream=False,
         ) -> str:
 
     # Setup the tools
@@ -81,6 +82,7 @@ def completion_with_tools(
         temperature=temperature,
         messages=messages,
         tools=tools,
+        stream=stream,
     )
 
     # See if there are any tools to apply

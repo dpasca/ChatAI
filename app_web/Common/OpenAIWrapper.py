@@ -118,10 +118,11 @@ class OpenAIWrapper:
         return self.client.files.content(file_id)
 
     #==== Completions
-    def CreateCompletion(self, model, messages, temperature=0.7, tools=None):
+    def CreateCompletion(self, model, messages, temperature=0.7, tools=None, stream=False):
         return self.client.chat.completions.create(
             model=model,
             messages=messages,
             temperature=temperature,
             tools=tools,
-            tool_choice="auto" if tools else None)
+            tool_choice="auto" if tools else None,
+            stream=stream)

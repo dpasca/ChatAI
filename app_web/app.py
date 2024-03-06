@@ -8,12 +8,12 @@ import os
 import sys
 import json
 import time
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+import uuid
+from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import make_response
 from flask_session import Session
 from flask_cors import CORS
-import datetime
-from datetime import datetime
-import inspect
+from flask_socketio import SocketIO, emit, join_room
 from io import BytesIO
 import threading
 
@@ -24,6 +24,7 @@ from Common.logger import *
 from Common import OAIUtils
 from Common import ChatAICore
 from Common.MsgThread import MsgThread
+from Common import AssistTools
 
 USER_BUCKET_PATH = "user_a_00001"
 ENABLE_SLEEP_LOGGING = False
@@ -48,160 +49,105 @@ with open(config['assistant_instructions'], 'r') as f:
 _oa_wrap = OpenAIWrapper(api_key=os.environ.get("OPENAI_API_KEY"))
 
 #===============================================================================
-from queue import Queue
-import time
-
-class TaskQueue:
-    def __init__(self, start_time=0):
-        self.start_time = start_time
-        self.queue = Queue()
-        self.lock = threading.Lock()
-
-    def is_active(self):
-        return self.start_time != 0
-
-    def get_elapsed(self):
-        return int(time.time()) - self.start_time
-
-    def put(self, item):
-        self.queue.put(item)
-
-    def get(self):
-        return self.queue.get()
-
-    def empty(self):
-        return self.queue.empty()
-
-#===============================================================================
 from threading import Lock
 
-class AppSession:
+class AppClient:
     def __init__(self):
         self.lock = Lock()
-        self.user_info = dict()
-        self.msg_thread = None
-        self.replies = TaskQueue()
+        self._user_info = dict()
+        self._msg_thread = None
+        self._misc_dict = dict()
 
-_app_sessions = {}
+    @property
+    def user_info(self):
+        with self.lock:
+            return self._user_info
+    @user_info.setter
+    def user_info(self, new_info):
+        with self.lock:
+            self._user_info = new_info
 
-def get_or_create_app_session(sid):
-    global _app_sessions
-    if sid not in _app_sessions:
-        _app_sessions[sid] = AppSession()
-    return _app_sessions[sid]
+    @property
+    def msg_thread(self):
+        with self.lock:
+            return self._msg_thread
+    @msg_thread.setter
+    def msg_thread(self, new_thread):
+        with self.lock:
+            self._msg_thread = new_thread
 
-def sess_get_lock():
-    sess = get_or_create_app_session(session.sid)
-    return sess.lock
+    def consume_key(self, key):
+        with self.lock:
+            if key in self._misc_dict:
+                value = self._misc_dict[key]
+                del self._misc_dict[key]
+                return value
+            return None
 
-def sess_get_user_info(session_id=None):
-    if session_id is None:
-        session_id = session.sid
-    sess = get_or_create_app_session(session_id)
-    with sess.lock:
-        return sess.user_info
+    def set_key(self, key, value):
+        with self.lock:
+            self._misc_dict[key] = value
 
-def sess_set_user_info(new_info):
+# TODO: store this in a database
+_app_clients = {}
+
+def get_app_client(client_id):
+    global _app_clients
+    if client_id not in _app_clients:
+        _app_clients[client_id] = AppClient()
+    return _app_clients[client_id]
+
+def client_get_user_info(client_id):
+    return get_app_client(client_id).user_info
+
+def client_set_user_info(client_id, new_info):
     logmsg(f"Setting new user info: {new_info}")
-    sess = get_or_create_app_session(session.sid)
-    with sess.lock:
-        sess.user_info = new_info
+    get_app_client(client_id).user_info = new_info
 
-def sess_get_msg_thread(session_id=None):
-    if session_id is None:
-        session_id = session.sid
-    sess = get_or_create_app_session(session_id)
-    with sess.lock:
-        return sess.msg_thread
+def client_get_msg_thread(client_id):
+    return get_app_client(client_id).msg_thread
 
-def sess_set_msg_thread(new_thread):
-    logmsg(f"Setting new thread: {new_thread}")
-    sess = get_or_create_app_session(session.sid)
-    with sess.lock:
-        sess.msg_thread = new_thread
+def client_set_msg_thread(client_id, new_thread):
+    logmsg(f"Setting new thread: {new_thread.thread_id}")
+    get_app_client(client_id).msg_thread = new_thread
 
-def sess_get_replies(session_id=None):
-    if session_id is None:
-        session_id = session.sid
-    sess = get_or_create_app_session(session_id)
-    with sess.lock:
-        return sess.replies
+def client_has_msg_thread(client_id):
+    return client_get_msg_thread(client_id) is not None
 
-def sess_set_replies(new_replies):
-    sess = get_or_create_app_session(session.sid)
-    with sess.lock:
-        sess.replies = new_replies
+def client_consume_key(client_id, key):
+    return get_app_client(client_id).consume_key(key)
 
-def sess_extend_replies(new_list, session_id):
-    sess = get_or_create_app_session(session_id)
-    with sess.lock:
-        with sess.replies.lock:
-            for item in new_list:
-                sess.replies.put(item)
+def client_set_key(client_id, key, value):
+    get_app_client(client_id).set_key(key, value)
 
-def has_usable_msg_thread(session_id=None):
-    if session_id is None:
-        session_id = session.sid
-
-    if session_id not in _app_sessions:
-        return False
-
-    mt = sess_get_msg_thread(session_id)
-    return mt is not None
 
 def local_get_user_info(arguments):
+    # NOTE: This function is called by AssistTools and
+    # 'tools_user_data' is the Client ID
     if 'tools_user_data' not in arguments:
         return 'No user info available'
-    return sess_get_user_info(arguments['tools_user_data'])
+    return client_get_user_info(client_id=arguments['tools_user_data'])
 
 def local_get_main_MsgThread(arguments):
+    # NOTE: This function is called by AssistTools and
+    # 'tools_user_data' is the Client ID
     if 'tools_user_data' not in arguments:
         logerr("No user data in arguments")
         return None
-    return sess_get_msg_thread(session_id=arguments['tools_user_data'])
+    return client_get_msg_thread(client_id=arguments['tools_user_data'])
 
 # Create the thread if it doesn't exist
-def createThread(force_new=False) -> None:
-
-    def create_new():
+def create_msg_thread(client_id, force_new) -> None:
+    mt = None if force_new else client_get_msg_thread(client_id)
+    if mt is None:
         mt = MsgThread.create_thread(_oa_wrap)
-        sess_set_msg_thread(mt)
-        logmsg("Creating new thread with ID " + mt.thread_id)
-        # Save the thread ID to the session
-        session['thread_id'] = mt.thread_id
-        if 'msg_thread_data' in session:
-            del session['msg_thread_data']
-        return mt
-
-    # Create or get the thread
-    if ('thread_id' not in session) or force_new:
-        mt = create_new()
-    else:
-        mt = MsgThread.from_thread_id(_oa_wrap, session['thread_id'])
-        sess_set_msg_thread(mt)
-        logmsg("Retrieved existing thread with ID " + mt.thread_id)
-
-    # If there aren't any messages in the thread, see if we have some in the session
-    if len(mt.messages) == 0 and 'msg_thread_data' in session:
-        mt.deserialize_data(session['msg_thread_data'])
-        # If there aren't any messages in the session, then we create a new thread
-        if len(mt.messages) == 0:
-            logmsg("No messages in the session, creating a new thread")
-            mt = create_new()
-
-    save_session()
+        client_set_msg_thread(client_id, mt)
+        logmsg("Created new thread with ID " + mt.thread_id)
 
     # Create the sub-agents system for the message-thread
     mt.create_judge(
         model=config["support_model_version"],
         temperature=config["support_model_temperature"])
-
-def save_session():
-    # When saving the session, we serialize our local thread data to the session obj
-    if (mt := sess_get_msg_thread()) is not None:
-        session['msg_thread_data'] = mt.serialize_data()
-    # Save the session (?)
-    session.modified = True
 
 #===============================================================================
 _storage = None
@@ -212,6 +158,10 @@ if os.getenv("DO_STORAGE_CONTAINER") is not None:
         access_key=os.getenv("DO_SPACES_ACCESS_KEY"),
         secret_key=os.getenv("DO_SPACES_SECRET_KEY"),
         endpoint=os.getenv("DO_STORAGE_SERVER"))
+
+#===============================================================================
+AssistTools.set_super_get_main_MsgThread(local_get_main_MsgThread)
+AssistTools.set_super_get_user_info(local_get_user_info)
 
 #===============================================================================
 # Initialize Flask app
@@ -248,7 +198,9 @@ def create_app():
 
     return app
 
+async_mode = None  # or 'eventlet' or 'gevent', depending on your async mode preference
 app = create_app()
+socketio = SocketIO(app, async_mode=async_mode, cors_allowed_origins="*")
 
 #===============================================================================
 @app.after_request
@@ -262,7 +214,10 @@ def after_request_func(response):
 #===============================================================================
 @app.route('/api/user_info', methods=['POST'])
 def user_info():
-    # Store the user info in the session
+    # Store the user info in the app client object
+    if client_id := request.cookies.get('CustomClientId') is None:
+        return jsonify({'error': 'No client ID found'}), 400
+
     user_info = request.get_json()
     logmsg(f"User info: {user_info}")
 
@@ -278,7 +233,7 @@ def user_info():
         has_missing_fields = True
         user_info['user_agent'] = 'Unknown'
 
-    sess_set_user_info(user_info)
+    client_set_user_info(client_id, user_info)
 
     return jsonify({'status': 'success'}) if not has_missing_fields else jsonify({'status': 'error'})
 
@@ -286,14 +241,20 @@ def user_info():
 @app.route('/clear_chat', methods=['POST'])
 def clear_chat():
     # Force-create a new thread
-    createThread(force_new=True)
+    if client_id := request.cookies.get('CustomClientId') is None:
+        return jsonify({'error': 'No client ID found'}), 400
+
+    create_msg_thread(client_id, force_new=True)
 
     return redirect(url_for('index'))
 
 @app.route('/reset_expired_chat', methods=['POST'])
 def reset_expired_chat():
     # Force-create a new thread
-    createThread(force_new=True)
+    if client_id := request.cookies.get('CustomClientId') is None:
+        return jsonify({'error': 'No client ID found'}), 400
+
+    create_msg_thread(client_id, force_new=True)
 
     return redirect(url_for('index'))
 
@@ -326,94 +287,80 @@ def make_file_url(file_id, simple_name):
 #==================================================================
 @app.route('/')
 def index():
-    # Load or create the thread
-    createThread(force_new=False)
-
     print(f"Welcome to {config['app_title']}, v{config['app_version']}")
     print(f"Assistant: {config['assistant_name']}")
 
-    return render_template(
-                'chat.html',
-                app_title=config["app_title"],
-                navbar_dev=config["navbar_dev"],
-                navbar_dev_url=config["navbar_dev_url"],
-                assistant_name=config["assistant_name"],
-                assistant_avatar=config["assistant_avatar"],
-                favicon_name=config["favicon_name"],
-                app_version=config["app_version"])
+    def do_render():
+        # Render the chat page
+        return render_template(
+            'chat.html',
+            app_title=config["app_title"],
+            navbar_dev=config["navbar_dev"],
+            navbar_dev_url=config["navbar_dev_url"],
+            assistant_name=config["assistant_name"],
+            assistant_avatar=config["assistant_avatar"],
+            favicon_name=config["favicon_name"],
+            app_version=config["app_version"])
 
-#===============================================================================
-def timing_decorator(func):
-    def wrapper(*args, **kwargs):
-        start = datetime.now()
-        result = func(*args, **kwargs)
-        end = datetime.now()
-        logmsg(f"Function {func.__name__} took {end - start} to complete")
-        return result
-    return wrapper
+    # Check if we have a custom client ID
+    if 'CustomClientId' not in request.cookies:
+        # Generate a new custom client ID
+        client_id = str(uuid.uuid4())
+        response = make_response(do_render())
+        response.set_cookie('CustomClientId', client_id)
+        # Load or create the thread
+        create_msg_thread(client_id, force_new=False)
+        return response
+    else:
+        # Load or create the thread
+        client_id = request.cookies.get('CustomClientId')
+        create_msg_thread(client_id, force_new=False)
+        return do_render()
+
 
 #===============================================================================
 @app.route('/get_history', methods=['GET'])
 def get_history():
+    if client_id := request.cookies.get('CustomClientId') is None:
+        return jsonify({'error': 'No client ID found'}), 400
+
     # Send to index page if we don't have a working message thread
-    if not has_usable_msg_thread():
+    if not client_has_msg_thread(client_id=client_id):
         return jsonify({'error': 'No message thread loaded, please reload the page.'}), 400
 
-    return jsonify({'messages': sess_get_msg_thread().make_messages_for_display()}), 200
+    return jsonify({'messages': client_get_msg_thread(client_id).make_messages_for_display()}), 200
 
 #===============================================================================
-@app.route('/get_replies', methods=['GET'])
-def get_replies():
-    # Send to index page if we don't have a working message thread
-    if not has_usable_msg_thread():
-        return jsonify({'error': 'No message thread loaded, please reload the page.'}), 400
+@socketio.on('connect')
+def handle_connect():
+    ws_session_id = request.sid  # request.sid for WebSocket session management
+    client_id = request.args.get('customClientId')  # Retrieved from the connection query
+    join_room(ws_session_id)
+    emit('connected', {'ws_session_id': ws_session_id, 'custom_client_id': client_id})
+    logmsg(f"Client connected. WebSocket Session ID: {ws_session_id}, Custom Client ID: {client_id}")
 
-    replies = sess_get_replies()
-    send_replies = []
-    with replies.lock:
-        if not replies.is_active():
-            #logmsg("No pending work")
-            return jsonify({'replies': [], 'message': 'No pending work', 'final': True}), 200
-
-        if replies.get_elapsed() > (60*5):
-            #logmsg("Timeout waiting for replies")
-            return jsonify({'replies': [], 'message': 'Timeout', 'final': True}), 200
-
-        while not replies.empty():
-            reply = replies.get()
-            logmsg(f"Got reply: {reply}")
-            if reply == 'END':
-                # Request fact-checking if enabled
-                if config['support_enable_factcheck']:
-                    session['generate_fchecks'] = True
-                logmsg(f"Reached end of replies")
-                sess_set_replies(TaskQueue())
-                return jsonify({'replies': send_replies, 'final': True}), 200
-            elif reply == 'ERR_THREAD_EXPIRED':
-                # Return an error for expired
-                return jsonify({'replies': send_replies, 'final': True, 'error': reply}), 500
-            else:
-                sess_get_msg_thread().add_message(reply)
-                send_replies.append(reply)
-
-    #logmsg(f"Sending {len(send_replies)} replies")
-    return jsonify({'replies': send_replies, 'final': False}), 200
+@socketio.on('disconnect')
+def handle_disconnect():
+    # Handle client disconnecting, if necessary
+    logmsg(f"Client disconnected. Session ID: {request.sid}")
 
 #===============================================================================
 @app.route('/get_addendums', methods=['GET'])
 def get_addendums():
     # Send to index page if we don't have a working message thread
-    if not has_usable_msg_thread():
+    if client_id := request.cookies.get('CustomClientId') is None:
+        return jsonify({'error': 'No client ID found'}), 400
+
+    if not client_has_msg_thread(client_id):
         return jsonify({'error': 'No message thread loaded, please reload the page.'}), 400
 
     # Do we have fact-checks to return
-    if ('generate_fchecks' not in session) or not session['generate_fchecks']:
+    do_gen_fc = client_consume_key(client_id, 'generate_fchecks')
+    if do_gen_fc is None or not do_gen_fc:
         return jsonify({'addendums': [], 'message': 'No pending fact-checks', 'final': True}), 200
 
-    del session['generate_fchecks']
-
     # We get the fact checks directly in JSON format
-    fc_str = sess_get_msg_thread().gen_fact_check(tools_user_data=session.sid)
+    fc_str = client_get_msg_thread(client_id).gen_fact_check(tools_user_data=client_id)
     if fc_str is None:
         return jsonify({'addendums': [], 'message': 'No pending fact-checks', 'final': True}), 200
 
@@ -430,39 +377,57 @@ def get_addendums():
     return jsonify({'addendums': [fc], 'final': True}), 200
 
 #===============================================================================
-@app.route('/send_message', methods=['POST'])
-@timing_decorator
-def send_message():
-    # Send to index page if we don't have a working message thread
-    if not has_usable_msg_thread():
-        return jsonify({'error': 'No message thread loaded, please reload the page.'}), 400
+@socketio.on('send_message')
+def handle_send_message(json, methods=['GET', 'POST']):
 
-    msg_text = request.json['message']
-    #thread_id = session['thread_id']
+    ws_session_id = request.sid  # Get the session ID from the WebSocket connection
 
-    # Create the user message
-    user_msg = sess_get_msg_thread().create_message(
-        role="user",
-        content=MsgThread.instrument_user_message(msg_text))
+    client_id = request.args.get('customClientId')
 
-    assist_str = OAIUtils.completion_with_tools(
-        wrap=_oa_wrap,
-        model=config["model_version"],
-        temperature=config["model_temperature"],
-        instructions=ChatAICore.instrument_instructions(assistant_instructions),
-        role_and_content_msgs=sess_get_msg_thread().make_messages_for_completion(20),
-        tools_user_data=session.sid)
+    msg_text = json['message']
 
-    assist_msg = sess_get_msg_thread().create_message(
-        role="assistant",
-        content=assist_str)
+    # Ensure there's an active message thread
+    if not client_has_msg_thread(client_id):
+        emit('stream', {'text': 'No message thread loaded, please reload the page.', 'isError': True}, room=ws_session_id)
+        return  # Exit if there's no usable message thread
 
-    save_session()
+    # Create the user message (will be used as context for the completion)
+    user_msg = client_get_msg_thread(client_id).create_user_message(msg_text)
 
-    # Create a new queue for this message thread
-    sess_set_replies(TaskQueue(start_time=int(time.time())))
-    sess_extend_replies([assist_msg], session.sid)
-    sess_extend_replies(['END'], session.sid)
+    def stream_openai_response(client_id, ws_session_id):
+        assist_str = OAIUtils.completion_with_tools(
+            wrap=_oa_wrap,
+            model=config["model_version"],
+            temperature=config["model_temperature"],
+            instructions=ChatAICore.instrument_instructions(assistant_instructions),
+            role_and_content_msgs=client_get_msg_thread(client_id).make_messages_for_completion(20),
+            tools_user_data=client_id,
+            stream=True  # Enable streaming
+        )
+
+        # Send the response in parts and collect the full text
+        reply_text = ""
+        for part in assist_str:
+            reply_text += part
+            print(part, end="")
+            socketio.emit('stream', {'text': part}, room=ws_session_id)
+
+        print("")
+
+        # End the stream with a special signal, e.g., 'END'
+        socketio.emit('stream', {'text': 'END'}, room=ws_session_id)
+
+        if config['support_enable_factcheck']:
+            client_set_key(client_id, 'generate_fchecks', True)
+
+        # Create the assistant message, which will be added to the message thread
+        client_get_msg_thread(client_id).create_assistant_message(reply_text)
+
+    # Call this new streaming function instead of appending replies directly
+    threading.Thread(
+        target=stream_openai_response,
+        args=(client_id, ws_session_id)
+        ).start()
 
     # Respond with a "processing" status and with the user message ID
     # We need the user message ID to match the addendums/fact-checks
@@ -470,4 +435,5 @@ def send_message():
                     'user_msg_id': user_msg['src_id']})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    #app.run(host='0.0.0.0', port=8080, debug=True)
+    socketio.run(app, host='0.0.0.0', port=8080, debug=True)

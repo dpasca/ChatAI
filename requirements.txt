@@ -2,6 +2,7 @@
 flask
 Flask-Session
 flask_cors
+flask_socketio
 openai
 duckduckgo_search
 python-dotenv

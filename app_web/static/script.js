@@ -289,96 +289,13 @@ function sendMessage(userInput, assistant_name) {
     // Append a waiting message before sending the request
     appendWaitingAssistMessage(assistant_name);
 
-    // Send message to Flask server
-    //console.log("Sending message:", userInput);
-    fetch('/send_message', {
-        method: 'POST',
-        credentials: 'include',
-        body: JSON.stringify({ 'message': userInput }),
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    })
-    // Get response from Flask server
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.status === 'processing') {
-            // Extract the user message ID and place it where
-            //   the temp ID is
-            const tempID = document.getElementById('PLACEHOLDER_USER_MSG_ID');
-            if (tempID) {
-                //console.log("Found temp ID:", tempID);
-                tempID.id = data.user_msg_id;
-            }
-            else {
-                console.error("No temp ID found");
-            }
-            // Start polling for replies
-            pollForReplies(assistant_name);
-        }
-    })
-    .catch(error => {
-        console.error('There was a problem with the fetch operation:', error);
+    // Now, emit the message through the WebSocket instead of making an HTTP request
+    socket.emit('send_message', { message: userInput });
 
-        showHideButton('reload-button', true);
-        showHideButton('erase-button', true);
-
-        removeWaitingAssistMessage(); // Remove the waiting message
-        inputBox.disabled = false; // Enable input box
-        sendButton.disabled = false; // Enable send button
-    });
-}
-
-// Poll for replies from the server
-function pollForReplies(assistant_name) {
-    fetch('/get_replies', {
-        method: 'GET',
-        credentials: 'include'
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.replies && data.replies.length > 0) {
-            for (let message of data.replies) {
-                appendMessage(message, assistant_name);
-            }
-        }
-        //console.log("Polling for replies:", data);
-        if (!data.final) {
-            // Continue polling if not final
-            setTimeout(() => pollForReplies(assistant_name), 1000);
-        } else {
-            // Processing is complete
-            //console.log("Processing complete");
-            document.getElementById('user-input').disabled = false; // Enable input box
-            document.getElementById('send-button').disabled = false; // Enable send button
-            removeWaitingAssistMessage(); // Remove the waiting message
-            showHideButton('erase-button', true);
-
-            // Start polling for addendums
-            //console.log("Starting polling for addendums");
-            pollForAddendums();
-        }
-    })
-    .catch(error => {
-        console.error('There was a problem with the fetch operation:', error);
-
-        showHideButton('reload-button', true);
-        showHideButton('erase-button', true);
-
-        removeWaitingAssistMessage(); // Remove the waiting message
-        document.getElementById('user-input').disabled = true; // Disable input box
-        document.getElementById('send-button').disabled = true; // Disable send button
-    });
+    // Reset input area
+    var inputBox = document.getElementById('user-input');
+    inputBox.value = '';
+    inputBox.focus();
 }
 
 function pollForAddendums() {
