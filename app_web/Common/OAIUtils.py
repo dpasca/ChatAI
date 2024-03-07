@@ -13,8 +13,7 @@ from . import AssistTools
 from typing import List, Dict, Iterator
 
 #==================================================================
-def apply_tools(response, wrap, tools_user_data) -> list:
-    response_msg = response.choices[0].message
+def apply_tools(response_msg, wrap, tools_user_data) -> list:
     calls = response_msg.tool_calls
     logmsg(f"Tool calls: {calls}")
     # Check if the model wanted to call a function
@@ -27,8 +26,11 @@ def apply_tools(response, wrap, tools_user_data) -> list:
 
     # Process each tool/function call
     for call in calls:
+        if call.function.name is None:
+            logwarn(f"Tool call with missing name: {call}")
+            continue
         name = call.function.name
-        args = json.loads(call.function.arguments)
+        args = json.loads(call.function.arguments) if call.function.arguments else {}
 
         logmsg(f"Tool call: {name}({args})")
 
@@ -87,19 +89,20 @@ def completion_with_tools(
         )
 
         # See if there are any tools to apply
-        if (new_messages := apply_tools(response, wrap, tools_user_data)):
+        if (new_messages := apply_tools(response.choices[0].message, wrap, tools_user_data)):
             logmsg(f"Applying tools: {new_messages}")
             messages += new_messages
             logmsg(f"New conversation with tool answers: {messages}")
             # Post-function-call conversation
-            post_tool_response = wrap.CreateCompletion(
+            pt_response = wrap.CreateCompletion(
                 model=model,
                 temperature=temperature,
                 messages=messages,
             )
-            return post_tool_response.choices[0].message.content
-
-        return response.choices[0].message.content
+            yield pt_response.choices[0].message.content
+        else:
+            logmsg(f"Yielding response: {response.choices[0].message.content}")
+            yield response.choices[0].message.content
     else:
         # Generate the first response
         logmsg(f"Starting stream")
@@ -113,29 +116,24 @@ def completion_with_tools(
 
         logmsg(f"Looping through stream")
         for response in stream_response:  # Process each streamed response
-            if 'choices' in response and response['choices']:
-                # Process tools and generate new messages
-                new_messages = apply_tools(response, wrap, tools_user_data)
-                logmsg(f"Applying tools: {new_messages}")
-                messages += new_messages
+            # Process tools and generate new messages
+            new_messages = apply_tools(response.choices[0].delta, wrap, tools_user_data)
+            logmsg(f"Applied tools: {response} -> {new_messages}")
+            messages += new_messages
 
-                # Yield the current part of the response
-                logmsg(f"Yielding response: {response.choices[0].message.content}")
-                yield response.choices[0].message.content
-
-                if new_messages:  # Only update if new messages from tools
-                    # Update the conversation for the next stream iteration
-                    response = wrap.CreateCompletion(
-                        model=model,
-                        temperature=temperature,
-                        messages=messages,
-                        tools=tools,
-                        stream=False,  # Now handling streaming manually
-                    )
-                    if 'choices' in response and response['choices']:
-                        logmsg(f"Yielding response: {response.choices[0].message.content}")
-                        yield response.choices[0].message.content
+            if new_messages:  # Only update if new messages from tools
+                # Update the conversation for the next stream iteration
+                pt_stream_response = wrap.CreateCompletion(
+                    model=model,
+                    temperature=temperature,
+                    messages=messages,
+                    tools=tools,
+                    stream=True,  # Now handling streaming manually
+                )
+                for pt_response in pt_stream_response:
+                    logmsg(f"Yielding response: {pt_response.choices[0].delta.content}")
             else:
+                logmsg(f"Yielding response: {response.choices[0].delta.content}")
                 yield response.choices[0].delta.content
 
     logmsg("End of stream")
