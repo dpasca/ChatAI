@@ -101,7 +101,6 @@ def completion_with_tools(
             )
             yield pt_response.choices[0].message.content
         else:
-            logmsg(f"Yielding response: {response.choices[0].message.content}")
             yield response.choices[0].message.content
     else:
         # Generate the first response
@@ -118,8 +117,10 @@ def completion_with_tools(
         for response in stream_response:  # Process each streamed response
             # Process tools and generate new messages
             new_messages = apply_tools(response.choices[0].delta, wrap, tools_user_data)
-            logmsg(f"Applied tools: {response} -> {new_messages}")
-            messages += new_messages
+            if new_messages:
+                logmsg(f"Applied Tools: {response} -> {new_messages}")
+                # Update the messages for the next stream iteration with only valid new messages
+                messages += new_messages
 
             if new_messages:  # Only update if new messages from tools
                 # Update the conversation for the next stream iteration
@@ -131,9 +132,10 @@ def completion_with_tools(
                     stream=True,  # Now handling streaming manually
                 )
                 for pt_response in pt_stream_response:
-                    logmsg(f"Yielding response: {pt_response.choices[0].delta.content}")
+                    logmsg(f"Yielding (FC): {pt_response.choices[0].delta.content}")
+                    yield pt_response.choices[0].delta.content
             else:
-                logmsg(f"Yielding response: {response.choices[0].delta.content}")
+                logmsg(f"Yielding: {response.choices[0].delta.content}")
                 yield response.choices[0].delta.content
 
     logmsg("End of stream")
