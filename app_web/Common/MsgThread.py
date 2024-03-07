@@ -126,6 +126,16 @@ class MsgThread(BaseModel):
         self.add_message(message)
         return message
 
+    def update_message(self, src_id, content) -> dict:
+        # Find the message with the given src_id and update its content
+        for msg in self.messages:
+            if msg['src_id'] == src_id:
+                msg['content'] = [{"type": "text", "value": content}]
+                return msg
+
+        logerr(f"Message with src_id {src_id} not found. Ignoring update.")
+        return None
+
     def create_user_message(self, content) -> dict:
         return self.create_message("user", MsgThread.instrument_user_message(content))
 

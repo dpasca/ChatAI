@@ -58,24 +58,30 @@ function appendMessage(message, assistant_name='') {
 
     removeWaitingAssistMessage(); // Remove the waiting message
 
-    //console.log("Appending message:", message);
     var chatBox = document.getElementById('chatbox');
+    var messageDiv = document.getElementById(message.src_id);
 
-    // Check if we have the src_id
-    messageHTML = `<div id="${message.src_id}" `;
-    //console.log("Using src_id:", message.src_id);
+    if (!messageDiv) {
+        // Create new message div if it doesn't exist
+        messageDiv = document.createElement('div'); // Create a new div element
+        messageDiv.id = message.src_id; // Set the id of the new div
 
-    if (message.role == 'user') {
-        messageHTML += `class="user-message">`;
-    } else if (message.role == 'assistant') {
-        messageHTML += `class="ai-message" data-name="${assistant_name}">`;
+        // Set the class of the new message based on the role
+        if (message.role == 'user') {
+            messageDiv.className = "user-message";
+        } else if (message.role == 'assistant') {
+            messageDiv.className = "ai-message";
+            messageDiv.setAttribute('data-name', assistant_name);
+        }
+
+        chatBox.appendChild(messageDiv); // Append the new div to the chatBox
+    } else {
+        // If updating an existing message, clear its content first
+        messageDiv.innerHTML = ''; // This clears the existing content
     }
-    else {
-        messageHTML += `>Unknown role: ${message.role}</div>`;
-        console.error("Unknown role:", message.role);
-        return;
-    }
 
+    // Create the content HTML for the new or updated message
+    var messageContentHTML = '';
     // For every piece of content
     for (let content of message.content) {
         if (content.type == 'text') {
@@ -83,24 +89,21 @@ function appendMessage(message, assistant_name='') {
             const reformattedContent = reformatIndentation(content.value);
             const htmlContent = md.render(reformattedContent);
             // Wrap the content in a div with a class for styling
-            messageHTML += `<div class="markdown-content">${htmlContent}</div>`;
+            messageContentHTML += `<div class="markdown-content">${htmlContent}</div>`;
         } else if (content.type == 'image_file') {
-            //messageHTML += `<img src="${content.value}" />`;
-            messageHTML += `<img src="${content.value}"`;
-            messageHTML += ` style="max-width: 100%; max-height: 400px; object-fit: contain; width: auto; height: auto;" />`;
-            //messageHTML += md.render(`![image](${content.value})`);
+            messageContentHTML += `<img src="${content.value}" style="max-width: 100%; max-height: 400px; object-fit: contain; width: auto; height: auto;" />`;
         } else {
-            messageHTML += `${content.type}: ${content.value}`;
+            messageContentHTML += `${content.type}: ${content.value}`;
         }
     }
 
-    messageHTML += '</div>';
+    // Set the innerHTML of the messageDiv to the new content
+    messageDiv.innerHTML = messageContentHTML;
 
-    //console.log("Appending message:", messageHTML);
-
-    chatBox.innerHTML += messageHTML;
-    chatBox.lastElementChild.scrollIntoView({ behavior: 'smooth' });
+    // Ensure the last message is scrolled into view
+    messageDiv.scrollIntoView({ behavior: 'smooth' });
 }
+
 
 function makeDispLink(url) {
     // Cut https:// at the beginning
@@ -277,7 +280,7 @@ function sendMessage(userInput, assistant_name) {
     // Construct a message object with the expected format
     const userMessage = {
         role: 'user',
-        src_id: 'PLACEHOLDER_USER_MSG_ID',
+        src_id: "PLACEHOLDER_" + Date.now().toString(),
         content: [{
             type: 'text',
             value: userInput

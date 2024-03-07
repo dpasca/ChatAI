@@ -102,6 +102,7 @@ def completion_with_tools(
         return response.choices[0].message.content
     else:
         # Generate the first response
+        logmsg(f"Starting stream")
         stream_response = wrap.CreateCompletion(
             model=model,
             temperature=temperature,
@@ -110,6 +111,7 @@ def completion_with_tools(
             stream=stream,
         )
 
+        logmsg(f"Looping through stream")
         for response in stream_response:  # Process each streamed response
             if 'choices' in response and response['choices']:
                 # Process tools and generate new messages
@@ -118,6 +120,7 @@ def completion_with_tools(
                 messages += new_messages
 
                 # Yield the current part of the response
+                logmsg(f"Yielding response: {response.choices[0].message.content}")
                 yield response.choices[0].message.content
 
                 if new_messages:  # Only update if new messages from tools
@@ -130,5 +133,10 @@ def completion_with_tools(
                         stream=False,  # Now handling streaming manually
                     )
                     if 'choices' in response and response['choices']:
+                        logmsg(f"Yielding response: {response.choices[0].message.content}")
                         yield response.choices[0].message.content
+            else:
+                yield response.choices[0].delta.content
+
+    logmsg("End of stream")
 

@@ -400,40 +400,56 @@
           }
       });
 
-      // Listen for the 'stream' event which will receive messages from the server
+      // Object to hold ongoing streams of messages
+      var currentData = {};
+
       socket.on('stream', function(data) {
-        function onStreamEnd() {
-          console.log('End of message stream.');
-          document.getElementById('user-input').disabled = false; // Enable input box
-          document.getElementById('send-button').disabled = false; // Enable send button
-          removeWaitingAssistMessage(); // Remove the waiting message
-          showHideButton('erase-button', true);
-        }
+          function onStreamEnd() {
+              console.log('End of message stream.');
+              document.getElementById('user-input').disabled = false; // Enable input box
+              document.getElementById('send-button').disabled = false; // Enable send button
+              removeWaitingAssistMessage(); // Remove the waiting message
+              showHideButton('erase-button', true);
+              // Clear the stored stream data for this src_id
+              delete currentData[data.src_id];
+          }
 
-        // Check if we have 'error' and it's true
-        if (data.isError) {
-          onStreamEnd();
+          // Handle error case
+          if (data.isError) {
+              onStreamEnd();
 
-          var elem = document.getElementById('error-status-message');
-          elem.style.display = 'block';
-          elem.innerHTML = data.text ? data.text : 'An error occurred.';
-        }
-        else
-        if (data.text == 'END') {
-          onStreamEnd();
-          pollForAddendums(); // Start polling for addendums
-        } else {
-          // Append received message part to the chatbox
-          appendMessage({role: 'assistant', content: [{type: 'text', value: data.text}]}, "{{ assistant_name }}");
-        }
+              var elem = document.getElementById('error-status-message');
+              elem.style.display = 'block';
+              elem.innerHTML = data.text ? data.text : 'An error occurred.';
+          } else if (data.text == 'END') {
+              // End of message stream
+              onStreamEnd();
+              pollForAddendums(); // Start polling for addendums
+          } else {
+              // Accumulate received message part
+              if (!currentData[data.src_id]) {
+                  currentData[data.src_id] = { content: [] };
+              }
+              currentData[data.src_id].content.push(data.text);
+
+              // Check if there is accumulated message content to display
+              if (currentData[data.src_id]) {
+                  joinedText = currentData[data.src_id].content.join('');
+                  //console.log('Sending accumulated message:', joinedText);
+                  appendMessage({
+                      role: 'assistant',
+                      src_id: data.src_id,
+                      content: [{type: 'text', value: joinedText}]},
+                      "{{ assistant_name }}");
+              }
+          }
       });
 
-      // If there is an established connection, handle it
       socket.on('connected', function(data) {
-        console.log('Connected with custom_client_id', data.custom_client_id);
-        if (getCookie('CustomClientId') !== data.custom_client_id) {
-          console.error('CustomClientId cookie does not match the one received from the server.');
-        }
+          console.log('Connected with custom_client_id', data.custom_client_id);
+          if (getCookie('CustomClientId') !== data.custom_client_id) {
+              console.error('CustomClientId cookie does not match the one received from the server.');
+          }
       });
     </script>
   </body>
