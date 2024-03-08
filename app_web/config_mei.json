@@ -1,5 +1,5 @@
 {
-    "app_version": "0.0.24",
+    "app_version": "0.0.26c",
     "model_version": "gpt-4-turbo-preview",
     "model_temperature": 0.5,
     "support_model_version": "gpt-3.5-turbo-0125",
