@@ -13,19 +13,11 @@ from . import AssistTools
 from typing import List, Dict, Iterator
 
 #==================================================================
-def apply_tools(response_msg, wrap, tools_user_data) -> list:
-    calls = response_msg.tool_calls
-    logmsg(f"Tool calls: {calls}")
-    # Check if the model wanted to call a function
-    if not calls:
-        return []
-
+def apply_tools(tool_calls, wrap, tools_user_data) -> list:
+    logmsg(f"Tool calls: {tool_calls}")
     messages = []
-    # Extend conversation with assistant's reply
-    messages.append(response_msg)
-
     # Process each tool/function call
-    for call in calls:
+    for call in tool_calls:
         if call.function.name is None:
             logwarn(f"Tool call with missing name: {call}")
             continue
@@ -55,88 +47,141 @@ def apply_tools(response_msg, wrap, tools_user_data) -> list:
     return messages
 
 #==================================================================
-def completion_with_tools(
-        wrap: OpenAIWrapper,
-        model : str,
-        temperature : float,
-        instructions : str,
-        role_and_content_msgs : List[Dict[str, str]],
-        tools_user_data=None,
-        stream=False,
-        ) -> Iterator[str]:
-
-    # Setup the tools
-    tools = []
-    #tools.append({"type": "code_interpreter"})
-    #tools.append({"type": "retrieval"})
-    for item in AssistTools.tool_items:
-        if not item.requires_assistant:
-            tools.append({ "type": "function", "function": item.definition })
-
-    messages = [
-        {"role": "system", "content": instructions},
-    ]
-    messages += role_and_content_msgs
-
-    if not stream:
-        # Generate the first response
-        response = wrap.CreateCompletion(
+def handle_non_stream(response, wrap, model, temperature, messages, tools_user_data):
+    # Handle the non-stream case
+    response_msg = response.choices[0].message
+    if response_msg.tool_calls:
+        tools_out = apply_tools(response_msg.tool_calls, wrap, tools_user_data)
+        messages.append(response_msg)  # Add the response message to the conversation
+        messages += tools_out  # Add the messages from the tools
+        pt_response = wrap.CreateCompletion(
             model=model,
             temperature=temperature,
             messages=messages,
-            tools=tools,
-            stream=stream,
         )
+        return pt_response.choices[0].message.content
+    else:
+        return response_msg.content
 
-        # See if there are any tools to apply
-        if (new_messages := apply_tools(response.choices[0].message, wrap, tools_user_data)):
-            logmsg(f"Applying tools: {new_messages}")
-            messages += new_messages
-            logmsg(f"New conversation with tool answers: {messages}")
-            # Post-function-call conversation
+#==================================================================
+def handle_stream(response, wrap, model, temperature, messages, tools_user_data):
+
+    # A class to store the tool call that can mimic the structure tool_calls in the response
+    class ToolCall:
+        def __init__(self, id=None, function_name=None, function_arguments=''):
+            self.id = id
+            self.function = self.Function(name=function_name, arguments=function_arguments)
+            self.is_complete = False
+
+        class Function:
+            def __init__(self, name=None, arguments=''):
+                self.name = name
+                self.arguments = arguments
+
+    # Handle the stream case
+    full_calls = {}
+    cur_call_index = None
+    accumulating_calls = False
+
+    # Process the stream of responses
+    for response_it in response:
+        response_d = response_it.choices[0].delta
+
+        # Do we have tool calls ?
+        if response_d.tool_calls:
+            # Set in "accumulation" state
+            accumulating_calls = True
+            # Process the tool-call deltas
+            for call_d in response_d.tool_calls:
+                # Has the index changed ?
+                if call_d.index != cur_call_index:
+                    # Mark the current call as complete (if any)
+                    if cur_call_index is not None:
+                        full_calls[cur_call_index].is_complete = True
+                    # Start accumulating a new call
+                    cur_call_index = call_d.index
+                    full_calls[cur_call_index] = ToolCall()
+
+                fc = full_calls[cur_call_index]
+                if call_d.id:
+                    assert fc.id is None
+                    fc.id = call_d.id
+                if call_d.function.name:
+                    assert fc.function.name is None
+                    fc.function.name = call_d.function.name
+                if call_d.function.arguments:
+                    fc.function.arguments += call_d.function.arguments
+        else:
+            # No more tool calls, can process the accumulated ones
+            accumulating_calls = False
+            if full_calls and cur_call_index is not None:
+                full_calls[cur_call_index].is_complete = True
+
+        # If we have a complete set of tool calls, process them
+        if full_calls and not accumulating_calls:
+            fc_list = list(full_calls.values())
+            tools_out = apply_tools(fc_list, wrap, tools_user_data)
+
+            # Build the message that details the requested too calls
+            tc_reqs = []
+            for c in fc_list:
+                tc_reqs.append({
+                    "id": c.id,
+                    "function": {
+                        "name": c.function.name,
+                        "arguments": c.function.arguments,
+                    },
+                    "type": "function",
+                })
+            messages.append({"role": "assistant", "tool_calls": tc_reqs})
+            # Add the tools output right below the request message
+            messages += tools_out
+
+            fc_list = []
+            full_calls = {}
+            # Post-tool call completion
             pt_response = wrap.CreateCompletion(
                 model=model,
                 temperature=temperature,
                 messages=messages,
-            )
-            yield pt_response.choices[0].message.content
+                stream=True)
+
+            for pt_response_it in pt_response:
+                yield pt_response_it.choices[0].delta.content
         else:
-            yield response.choices[0].message.content
+            yield response_d.content
+
+#==================================================================
+def completion_with_tools(
+        wrap: OpenAIWrapper,
+        model: str,
+        temperature: float,
+        instructions: str,
+        role_and_content_msgs: List[Dict[str, str]],
+        tools_user_data=None,
+        stream=False) -> Iterator[str]:
+
+    tools = []
+    for item in AssistTools.tool_items:
+        # NOTE: "assistant" here means our agent system (e.g. research asssitant),
+        #  not OpenAI's high level API
+        if not item.requires_assistant:
+            tools.append({"type": "function", "function": item.definition})
+
+    messages = [
+        {"role": "system", "content": instructions},
+    ] + role_and_content_msgs
+
+    response = wrap.CreateCompletion(
+        model=model,
+        temperature=temperature,
+        messages=messages,
+        tools=tools,
+        stream=stream,
+    )
+
+    if not stream:
+        yield handle_non_stream(response, wrap, model, temperature, messages, tools_user_data)
     else:
-        # Generate the first response
-        logmsg(f"Starting stream")
-        stream_response = wrap.CreateCompletion(
-            model=model,
-            temperature=temperature,
-            messages=messages,
-            tools=tools,
-            stream=stream,
-        )
-
-        logmsg(f"Looping through stream")
-        for response in stream_response:  # Process each streamed response
-            # Process tools and generate new messages
-            new_messages = apply_tools(response.choices[0].delta, wrap, tools_user_data)
-            if new_messages:
-                logmsg(f"Applied Tools: {response} -> {new_messages}")
-                # Update the messages for the next stream iteration with only valid new messages
-                messages += new_messages
-
-            if new_messages:  # Only update if new messages from tools
-                # Update the conversation for the next stream iteration
-                pt_stream_response = wrap.CreateCompletion(
-                    model=model,
-                    temperature=temperature,
-                    messages=messages,
-                    tools=tools,
-                    stream=True,  # Now handling streaming manually
-                )
-                for pt_response in pt_stream_response:
-                    logmsg(f"Yielding (FC): {pt_response.choices[0].delta.content}")
-                    yield pt_response.choices[0].delta.content
-            else:
-                logmsg(f"Yielding: {response.choices[0].delta.content}")
-                yield response.choices[0].delta.content
-
-    logmsg("End of stream")
+        yield from handle_stream(response, wrap, model, temperature, messages, tools_user_data)
 
