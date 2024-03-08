@@ -201,11 +201,36 @@ body.dark-theme #user-input {
 
 #send-button {
     margin-top: 0.3em;
+    margin-right: 2rem;
+}
+
+.bottom-container {
+    position: fixed; /* Change this if it's not fixed to the bottom */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-bottom: 0.1rem;
+    background: transparent;
+    z-index: 1030; /* Ensure it's above other content */
+    transition: bottom 0.1s; /* Optional: adds a smooth transition */
+}
+.container {
+    margin-bottom: 120px; /* Adjust based on the actual height of your input group */
+}
+.footer-info {
+    display: flex;
+    justify-content: space-between; /* This separates the children */
+    align-items: center; /* Align items vertically */
 }
 
 .input-group {
-    display: flex;
-    align-items: flex-end; /* Aligns children (textarea and button) to the bottom */
+    position: fixed;
+    bottom: 1.5rem;
+    left: 1rem;
+    right: 1rem;
+    box-sizing: border-box;
 }
 
 .input-group-append {
@@ -216,6 +241,7 @@ body.dark-theme #user-input {
     font-size: 0.8rem;
     color: #888;
     margin-top: 0.5em;
+    margin-bottom: 0;
     font-style: italic;
     /* some indentation */
     padding-left: 1em;
@@ -225,15 +251,11 @@ body.dark-theme #user-input {
     font-size: 0.8rem;
     color: #888;
     margin-top: 0.5em;
+    text-align: right;
     /* some indentation */
     padding-left: 1em;
     margin-right: 1em;
-}
-
-.footer-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    margin-left: auto; /* push the text to the right */
 }
 
 /* Custom CSS for reducing text size in code blocks */

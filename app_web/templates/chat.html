@@ -45,7 +45,7 @@
       </div>
     </nav>
 
-    <div class="container">
+    <div class="container" id="main-content">
       <div class="row">
         <div class="col-md-8 offset-md-2">
           <div id="chatbox">
@@ -69,18 +69,21 @@
           <!-- Status message for generic errors -->
           <div id="error-status-message" class="alert alert-danger" role="alert" style="display: none;">
           </div>
-          <div class="input-group">
-            <textarea class="form-control" id="user-input" data-i18n="[placeholder]type_a_message"></textarea>
-            <div class="input-group-append">
-              <button class="btn btn-primary" id="send-button">
-                <span class="visually-hidden" data-i18n="send">Send</span>
-                <i class="bi bi-arrow-right"></i>
-              </button>
+
+          <div class="bottom-container">
+            <div class="input-group">
+              <textarea class="form-control" id="user-input" data-i18n="[placeholder]type_a_message"></textarea>
+              <div class="input-group-append">
+                <button class="btn btn-primary" id="send-button">
+                  <span class="visually-hidden" data-i18n="send">Send</span>
+                  <i class="bi bi-arrow-right"></i>
+                </button>
+              </div>
             </div>
-          </div>
-          <div class="footer-info">
-            <p id="input-notice" data-i18n="use_shift_enter" class="input-notice">Use Shift+Enter to insert a new line</p>
-            <p class="version-text">v {{ app_version }}</p>
+            <div class="footer-info">
+              <div id="input-notice" data-i18n="use_shift_enter" class="input-notice">Use Shift+Enter to insert a new line</div>
+              <div class="version-text">v {{ app_version }}</div>
+            </div>
           </div>
 
           <script>
@@ -353,24 +356,62 @@
         document.body.style.paddingTop = navbarHeight + 'px';
       });
 
+      // Auto-grow textarea, used for the input box
       function autoGrowTextArea(textArea, maxHeight) {
-          textArea.style.overflowY = 'hidden'; // Prevent scrollbar from flashing during size adjustment
-          textArea.style.height = (textArea.scrollHeight) + 'px';
+          // Reset height to ensure proper scrollHeight measurement
+          textArea.style.height = 'auto'; 
+
+          // Set the correct height based on scrollHeight
+          var newHeight = textArea.scrollHeight + 'px'; // Calculate new height
+          textArea.style.height = newHeight;
 
           if (textArea.scrollHeight > maxHeight) {
               textArea.style.overflowY = 'auto'; // Enable scrollbar if content exceeds max height
               textArea.style.height = maxHeight + 'px';
+          } else {
+              textArea.style.overflowY = 'hidden'; // Prevent scrollbar from showing when not needed
           }
       }
 
-      // Select your textarea element
+      // Attach the event listener and set initial size
       const textArea = document.getElementById('user-input');
       const maxHeight = 200; // Maximum height in pixels
-
-      // Event listener for input on textarea
       textArea.addEventListener('input', function() {
           autoGrowTextArea(this, maxHeight);
       });
+
+      // Set initial size on page load
+      document.addEventListener('DOMContentLoaded', function() {
+          autoGrowTextArea(textArea, maxHeight);
+      });
+
+      // Scroll to the bottom of the chatbox
+      function scrollToBottom() {
+          var chatbox = document.getElementById('chatbox');
+          chatbox.scrollTop = chatbox.scrollHeight;
+      }
+
+      // Adjust the margin of the main content to accommodate the input group
+      function adjustContentMargin() {
+          var inputGroupHeight = document.querySelector('.input-group').offsetHeight;
+          var mainContent = document.getElementById('main-content');
+          mainContent.style.marginBottom = (inputGroupHeight + 30) + 'px'; // arbitrary additional margin
+      }
+
+      function updateLayout() {
+          requestAnimationFrame(() => {
+              adjustContentMargin();
+              scrollToBottom();
+          });
+      }
+
+      // Adjust the margin when the document is loaded and when the window is resized
+      document.addEventListener('DOMContentLoaded', updateLayout);
+      window.addEventListener('resize', updateLayout);
+
+      // Adjust when the input is resized (due to typing, etc.)
+      var observer = new MutationObserver(updateLayout);
+      observer.observe(document.querySelector('.input-group'), { attributes: true, childList: true, subtree: true });
     </script>
 
     <!-- Socket.IO client -->
@@ -407,6 +448,7 @@
           function onStreamEnd() {
               console.log('End of message stream.');
               document.getElementById('user-input').disabled = false; // Enable input box
+              document.getElementById('user-input').focus();
               document.getElementById('send-button').disabled = false; // Enable send button
               removeWaitingAssistMessage(); // Remove the waiting message
               showHideButton('erase-button', true);
@@ -441,6 +483,9 @@
                       src_id: data.src_id,
                       content: [{type: 'text', value: joinedText}]},
                       "{{ assistant_name }}");
+
+                adjustContentMargin();
+                scrollToBottom();
               }
           }
       });
