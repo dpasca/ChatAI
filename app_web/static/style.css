@@ -201,7 +201,6 @@ body.dark-theme #user-input {
 
 #send-button {
     margin-top: 0.3em;
-    margin-right: 2rem;
 }
 
 .bottom-container {
@@ -216,6 +215,38 @@ body.dark-theme #user-input {
     z-index: 1030; /* Ensure it's above other content */
     transition: bottom 0.1s; /* Optional: adds a smooth transition */
 }
+
+/* Ensure the main content is scrollable and fills the space between navbar and input box */
+.main-content {
+    overflow-y: scroll; /* Allows scrolling */
+    position: fixed; /* Fixed position */
+    top: 56px; /* Height of the navbar */
+    bottom: 0px; /* Height of the input box */
+    width: 100%; /* Take full width */
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    margin: 0;
+}
+
+/* Adjust the input area to be fixed at the bottom */
+.input-area {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%; /* Full width */
+    border-top: 1px solid #ccc; /* Light border for separation */
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 0.3rem;
+    margin-top: 0;
+}
+
+/* Dark theme styles for input-area */
+body.dark-theme .input-area {
+    background-color: #202020; /* Dark grey background for the input area */
+    border-top: 1px solid #333; /* Darker border color for the input area */
+}
+
 .container {
     margin-bottom: 120px; /* Adjust based on the actual height of your input group */
 }
@@ -226,15 +257,7 @@ body.dark-theme #user-input {
 }
 
 .input-group {
-    position: fixed;
-    bottom: 1.5rem;
-    left: 1rem;
-    right: 1rem;
     box-sizing: border-box;
-}
-
-.input-group-append {
-    margin-left: 0.3em; /* Adds a little space between the textarea and the button */
 }
 
 .input-notice {

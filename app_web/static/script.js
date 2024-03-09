@@ -101,7 +101,11 @@ function appendMessage(message, assistant_name='') {
     messageDiv.innerHTML = messageContentHTML;
 
     // Ensure the last message is scrolled into view
-    messageDiv.scrollIntoView({ behavior: 'smooth' });
+    //messageDiv.scrollIntoView({ behavior: 'auto' });
+    // Scroll to the bottom after the new message has been added and rendered
+    //requestAnimationFrame(() => {
+    //    chatBox.scrollTop = chatBox.scrollHeight;
+    //});
 }
 
 
