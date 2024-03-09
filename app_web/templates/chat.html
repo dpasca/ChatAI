@@ -426,7 +426,13 @@
           function onStreamEnd() {
               console.log('End of message stream.');
               document.getElementById('user-input').disabled = false; // Enable input box
-              document.getElementById('user-input').focus();
+
+              // Bring back the focus to the input box, but only for desktop devices
+              //  to avoid the keyboard popping up on mobile devices
+              if (!isMobileDevice()) {
+                  document.getElementById('user-input').focus();
+              }
+
               document.getElementById('send-button').disabled = false; // Enable send button
               removeWaitingAssistMessage(); // Remove the waiting message
               showHideButton('erase-button', true);
@@ -462,7 +468,11 @@
                       content: [{type: 'text', value: joinedText}]},
                       "{{ assistant_name }}");
 
-                  updateLayout();
+                  //updateLayout();
+                  adjustContentMargin();
+                  //if (!isMobileDevice()) {
+                      scrollToBottom();
+                  //}
               }
           }
       });

@@ -229,6 +229,13 @@ body.dark-theme #user-input {
     margin: 0;
 }
 
+/* REVERSE_MODE: use this if we're using this mode */
+.main-content {
+    display: flex; /* Use flexbox for layout */
+    flex-direction: column-reverse; /* Reverse the order of messages */
+    overflow-y: auto; /* Allow scrolling */
+}
+
 /* Adjust the input area to be fixed at the bottom */
 .input-area {
     position: fixed;
