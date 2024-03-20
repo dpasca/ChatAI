@@ -160,8 +160,15 @@ if os.getenv("DO_STORAGE_CONTAINER") is not None:
         endpoint=os.getenv("DO_STORAGE_SERVER"))
 
 #===============================================================================
-AssistTools.set_super_get_main_MsgThread(local_get_main_MsgThread)
-AssistTools.set_super_get_user_info(local_get_user_info)
+# Initialize the tools
+AssistTools.initialize_tools(
+    enable_rag=config.get('enable_rag', False),
+    rag_query_instructions=config.get('rag_query_instructions'),
+    enable_web_search=config.get('enable_web_search', False),
+    storage=_storage,
+    super_get_user_info_=local_get_user_info,
+    super_get_main_MsgThread_=local_get_main_MsgThread,
+    )
 
 #===============================================================================
 # Initialize Flask app
@@ -279,7 +286,7 @@ def make_file_url(file_id, simple_name):
         data = _oa_wrap.GetFileContent(file_id)
         data_io = BytesIO(data.read())
         logmsg(f"Uploading file {file_path} to storage...")
-        _storage.UploadFile(data_io, file_path)
+        _storage.upload_file(data_io, file_path)
 
     logmsg(f"Getting file url for {file_id}, path: {file_path}")
     return _storage.GetFileURL(file_path)

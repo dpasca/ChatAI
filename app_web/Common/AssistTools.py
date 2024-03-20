@@ -14,20 +14,15 @@ from .logger import *
 from typing import Callable, Optional
 from .MsgThread import MsgThread as MsgThread
 
+# Directory for persisting llmaindex index data
+RAG_INDEX_PERSIST_DIR = "_index_data"
+# Directory for persisting Chroma data
+RAG_CHROMA_PERSIST_DIR = "_chroma_db"
+
 #==================================================================
 # Define the super_get_user_info function
 super_get_user_info: Callable[[Optional[dict]], dict] = lambda arguments=None: None
-
-def set_super_get_user_info(super_get_user_info_: Callable[[Optional[dict]], dict]):
-    global super_get_user_info
-    super_get_user_info = super_get_user_info_
-
-#==================================================================
 super_get_main_MsgThread: Callable[[], MsgThread] = lambda: None
-
-def set_super_get_main_MsgThread(super_get_main_MsgThread_: Callable[[], MsgThread]):
-    global super_get_main_MsgThread
-    super_get_main_MsgThread = super_get_main_MsgThread_
 
 #==================================================================
 def ddgsTextSearch(query, max_results=None):
@@ -100,25 +95,6 @@ class ToolItem(BaseModel):
 
 tool_items = [
     ToolItem(
-        name="perform_web_search",
-        function=perform_web_search,
-        requires_assistant=False,
-        definition={
-            "name": "perform_web_search",
-            "description": "Perform a web search for any unknown or current information",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query"
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    ),
-    ToolItem(
         name="get_user_info",
         function=get_user_info,
         requires_assistant=False,
@@ -163,10 +139,8 @@ tool_items = [
                 "required": ["query"]
             }
         }
-    ),
+    )
 ]
-
-tool_items_dict = {item.name: item for item in tool_items}
 
 def fallback_tool_function(name, arguments):
     logerr(f"Unknown function {name}. Falling back to web search !")
@@ -174,3 +148,150 @@ def fallback_tool_function(name, arguments):
     query = f"What is {name_to_human_friendly} of " + " ".join(arguments.values())
     logmsg(f"Submitting made-up query: {query}")
     return ddgsTextSearch(query, max_results=3)
+
+#==================================================================
+# RAG (Retrieval Augmented Generation) tools
+import chromadb
+from llama_index.core import StorageContext, load_index_from_storage
+from llama_index.vector_stores.chroma import ChromaVectorStore
+
+class RAGSystem:
+    def __init__(self, storage, rag_query_instructions):
+        self.tool_items = []
+        self.index = None
+        self.query_engine = None
+        self.rag_query_instructions = rag_query_instructions
+
+        try:
+            logmsg("Downloading RAG index and Chroma data...")
+            storage.download_dir(
+                local_dir=RAG_INDEX_PERSIST_DIR,
+                cloud_dir=RAG_INDEX_PERSIST_DIR,
+                use_file_listing=True)
+            storage.download_dir(
+                local_dir=RAG_CHROMA_PERSIST_DIR,
+                cloud_dir=RAG_CHROMA_PERSIST_DIR,
+                use_file_listing=True)
+        except Exception as e:
+            logerr(f"Error downloading RAG index: {e}")
+            return
+
+        # Initialize Chroma client
+        logmsg("Initializing Chroma client...")
+        chdb = chromadb.PersistentClient(path=RAG_CHROMA_PERSIST_DIR)
+        chroma_collection = chdb.get_or_create_collection("quickstart")
+        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+
+        logmsg("Loading documents and creating index...")
+        storage_context = StorageContext.from_defaults(
+            persist_dir=RAG_INDEX_PERSIST_DIR,
+            vector_store=vector_store)
+
+        # Load the index
+        logmsg("Loading existing index...")
+        self.index = load_index_from_storage(storage_context)
+        self.query_engine = self.index.as_query_engine()
+
+        # Append the RAG tool definition
+        logmsg("Creating RAG tool definition")
+        self.tool_items.append(
+            ToolItem(
+                name="search_knowledge_base",
+                function=self.rag_search_knowledge_base,
+                requires_assistant=False,
+                definition={
+                    "name": "search_knowledge_base",
+                    "description": "Search the knowledge base for information",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            )
+        )
+
+    def rag_search_knowledge_base(self, arguments):
+        query = arguments["query"]
+
+        if inst := self.rag_query_instructions:
+            query = query + ". " + inst
+
+        similarity_top_k = 5
+
+        retrieved_docs = self.query_engine.retrieve(query)
+
+        results = []
+        for doc in retrieved_docs[:similarity_top_k]:
+            score = doc.score
+            text = doc.text
+            metadata = doc.node.extra_info
+
+            logmsg(f"node.text: {doc.node.text}")
+
+            result = {
+                "score": score,
+                "text": text,
+                "metadata": metadata
+            }
+            results.append(result)
+
+        return json.dumps(results)
+
+    def get_tool_items(self):
+        return self.tool_items
+
+
+#==================================================================
+tool_items_dict = {}
+
+def initialize_tools(
+        enable_rag=False,
+        rag_query_instructions=None,
+        enable_web_search=True,
+        storage=None,
+        super_get_user_info_: Callable[[Optional[dict]], dict]=None,
+        super_get_main_MsgThread_: Callable[[], MsgThread]=None):
+
+    global super_get_main_MsgThread
+    super_get_main_MsgThread = super_get_main_MsgThread_
+
+    global super_get_user_info
+    super_get_user_info = super_get_user_info_
+
+    if enable_web_search:
+        tool_items.append(
+            ToolItem(
+                name="perform_web_search",
+                function=perform_web_search,
+                requires_assistant=False,
+                definition={
+                    "name": "perform_web_search",
+                    "description": "Perform a web search",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            )
+        )
+
+    # Try to initialize the RAG
+    if enable_rag and storage is not None:
+        rag_sys = RAGSystem(storage, rag_query_instructions)
+        tool_items.extend(rag_sys.get_tool_items())
+
+    # Finally initialize the dictionary only with the enabled tools
+    global tool_items_dict
+    tool_items_dict = {item.name: item for item in tool_items}

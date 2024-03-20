@@ -9,3 +9,7 @@ python-dotenv
 boto3
 pytz
 pydantic
+# For "knowledge"
+llama-index
+llama-index-vector-stores-chroma
+chromadb

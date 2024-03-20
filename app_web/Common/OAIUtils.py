@@ -36,12 +36,20 @@ def apply_tools(tool_calls, wrap, tools_user_data) -> list:
         else:
             function_response = AssistTools.fallback_tool_function(name, args)
 
+        #logmsg(f"Tool respose: {function_response}")
+
+        content = None
+        try:
+            content = json.dumps(function_response)
+        except:
+            content = function_response.response
+
         # Extend conversation with function response
         messages.append({
             "tool_call_id": call.id,
             "role": "tool",
             "name": name,
-            "content": json.dumps(function_response),
+            "content": content,
         })
 
     return messages
