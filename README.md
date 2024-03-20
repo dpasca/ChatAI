@@ -1,6 +1,6 @@
 # ChatAI
 
-This is a chatbot based on OpenAI with Assistant API,
+This is a chatbot based on OpenAI Completion API,
 implementing agents and function-calling for fact-checking.
 
 It runs both as a **console app** and as a **web app**, with a shared codebase.
@@ -13,12 +13,11 @@ See commits for other contributors.
 
 ## Features
 
-- AI chatbot based on OpenAI and Assistant API (beta)
+- AI chatbot based on OpenAI and Completion API
+- RAG based on LLamaindex and Chroma DB
 - Real-time fact-checking using agents
 - Sense of time and location using prompt injection
 - Web search using function-calling and DuckDuckGo
-- Image generation (Python plotting) and storage
-- Support for PDF knowledge files (need to upload manually to OpenAI assistant settings)
 - Code syntax highlighting and LaTeX rendering
 
 ## Notes about Fact-Checking
@@ -127,13 +126,8 @@ The app will be available globally at `https://yourappname.ondigitalocean.app`.
 
 ## Knowledge files
 
-This app uses the Assistant API from OpenAI, which allows to upload knowledge files
-in various formats.
-
-After a first run of the app, an assistant with the `assistant_codename` from `config.json`
-will show in the the [Assistant API dashboard](https://platform.openai.com/assistants).
-
-Find the assistant there, click on `...` -> `Edit` and add the knowledge files.
+This app implements a RAG system. See the directory `knowledge` for scripts
+on how to build this.
 
 ### Optimization
 
