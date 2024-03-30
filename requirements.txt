@@ -1,6 +1,7 @@
 # Requirements for the Web App !
 flask
 Flask-Session
+cachelib
 flask_cors
 flask_socketio
 openai

@@ -221,6 +221,7 @@ def after_request_func(response):
 #===============================================================================
 @app.route('/api/user_info', methods=['POST'])
 def user_info():
+    logmsg("In route /api/user_info")
     # Store the user info in the app client object
     if (client_id := request.cookies.get('CustomClientId')) is None:
         return jsonify({'error': 'No client ID found'}), 400
@@ -247,6 +248,7 @@ def user_info():
 #===============================================================================
 @app.route('/clear_chat', methods=['POST'])
 def clear_chat():
+    logmsg("In route /clear_chat")
     # Force-create a new thread
     if (client_id := request.cookies.get('CustomClientId')) is None:
         return jsonify({'error': 'No client ID found'}), 400
@@ -257,6 +259,7 @@ def clear_chat():
 
 @app.route('/reset_expired_chat', methods=['POST'])
 def reset_expired_chat():
+    logmsg("In route /reset_expired_chat")
     # Force-create a new thread
     if (client_id := request.cookies.get('CustomClientId')) is None:
         return jsonify({'error': 'No client ID found'}), 400
@@ -292,10 +295,16 @@ def make_file_url(file_id, simple_name):
     return _storage.GetFileURL(file_path)
 
 #==================================================================
+def disable_cache(response):
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
+#==================================================================
 @app.route('/')
 def index():
-    print(f"Welcome to {config['app_title']}, v{config['app_version']}")
-    print(f"Assistant: {config['assistant_name']}")
+    logmsg("In route /")
 
     def do_render():
         # Render the chat page
@@ -318,35 +327,42 @@ def index():
         response.set_cookie('CustomClientId', client_id)
         # Load or create the thread
         create_msg_thread(client_id, force_new=False)
-        return response
+        return disable_cache(response)
     else:
         # Load or create the thread
         client_id = request.cookies.get('CustomClientId')
         logmsg(f"Using existing client ID: {client_id}")
         create_msg_thread(client_id, force_new=False)
-        return do_render()
+        return disable_cache(make_response(do_render()))
 
 
 #===============================================================================
 @app.route('/get_history', methods=['GET'])
 def get_history():
+    logmsg("In route /get_history")
     if (client_id := request.cookies.get('CustomClientId')) is None:
-        return jsonify({'error': 'No client ID found'}), 400
+        return disable_cache(jsonify({'error': 'No client ID found'})), 400
 
     # Send to index page if we don't have a working message thread
     if not client_has_msg_thread(client_id=client_id):
-        return jsonify({'error': 'No message thread loaded, please reload the page.'}), 400
+        return disable_cache(jsonify({'error': 'No message thread loaded, please reload the page.'})), 400
 
-    return jsonify({'messages': client_get_msg_thread(client_id).make_messages_for_display()}), 200
+    return disable_cache(jsonify({'messages': client_get_msg_thread(client_id).make_messages_for_display()})), 200
 
 #===============================================================================
 @socketio.on('connect')
 def handle_connect():
     ws_session_id = request.sid  # request.sid for WebSocket session management
-    client_id = request.args.get('customClientId')  # Retrieved from the connection query
+    client_id = request.args.get('CustomClientId')  # Retrieved from the connection query
     join_room(ws_session_id)
-    emit('connected', {'ws_session_id': ws_session_id, 'custom_client_id': client_id})
     logmsg(f"Client connected. WebSocket Session ID: {ws_session_id}, Custom Client ID: {client_id}")
+
+@socketio.on('connect_ack')
+def handle_connect_ack():
+    ws_session_id = request.sid  # request.sid for WebSocket session management
+    client_id = request.args.get('CustomClientId')  # Retrieved from the connection query
+    logmsg(f"Responding to connect_ack. WebSocket Session ID: {ws_session_id}, Custom Client ID: {client_id}")
+    emit('connected', {'ws_session_id': ws_session_id, 'custom_client_id': client_id})
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -356,6 +372,7 @@ def handle_disconnect():
 #===============================================================================
 @app.route('/get_addendums', methods=['GET'])
 def get_addendums():
+    logmsg("In route /get_addendums")
     # Send to index page if we don't have a working message thread
     if (client_id := request.cookies.get('CustomClientId')) is None:
         return jsonify({'error': 'No client ID found'}), 400
@@ -386,70 +403,83 @@ def get_addendums():
     return jsonify({'addendums': [fc], 'final': True}), 200
 
 #===============================================================================
+def stream_openai_response(client_id, ws_session_id):
+
+    mt = client_get_msg_thread(client_id)
+
+    response = OAIUtils.completion_with_tools(
+        wrap=_oa_wrap,
+        model=config["model_version"],
+        temperature=config["model_temperature"],
+        instructions=ChatAICore.instrument_instructions(assistant_instructions),
+        role_and_content_msgs=mt.make_messages_for_completion(20),
+        tools_user_data=client_id,
+        stream=True  # Enable streaming
+    )
+
+    # Create the assistant message, which will be added to the message thread
+    assist_msg = mt.create_assistant_message("")
+    src_id = assist_msg['src_id']
+
+    # Send the response in parts and collect the full text
+    reply_text = ""
+    for part in response:
+        if part is None:
+            #print("<END>")
+            continue
+        reply_text += part
+        #print(part, end="")
+        try:
+            socketio.emit('stream', {'src_id': src_id, 'text': part}, room=ws_session_id)
+        except Exception as e:
+            logerr(f"Error sending message to session {ws_session_id}: {e}")
+            break
+
+    #print("")
+
+    # End the stream with a special signal, e.g., 'END'
+    try:
+        socketio.emit('stream', {'src_id': src_id, 'text': 'END'}, room=ws_session_id)
+    except Exception as e:
+        logerr(f"Error sending END message to session {ws_session_id}: {e}")
+
+    mt.update_message(src_id, reply_text)
+
+    if config['support_enable_factcheck']:
+        client_set_key(client_id, 'generate_fchecks', True)
+
 @socketio.on('send_message')
 def handle_send_message(json, methods=['GET', 'POST']):
 
     ws_session_id = request.sid  # Get the session ID from the WebSocket connection
 
-    client_id = request.args.get('customClientId')
+    client_id = request.args.get('CustomClientId')
 
     msg_text = json['message']
 
-    # Ensure there's an active message thread
-    if not client_has_msg_thread(client_id):
-        emit('stream', {'text': 'No message thread loaded, please reload the page.', 'isError': True}, room=ws_session_id)
-        return  # Exit if there's no usable message thread
+    try:
+        # Ensure there's an active message thread
+        if not client_has_msg_thread(client_id):
+            emit('stream', {'text': 'No message thread loaded, please reload the page.', 'isError': True}, room=ws_session_id)
+            return  # Exit if there's no usable message thread
 
-    # Create the user message (will be used as context for the completion)
-    user_msg = client_get_msg_thread(client_id).create_user_message(msg_text)
+        # Create the user message (will be used as context for the completion)
+        user_msg = client_get_msg_thread(client_id).create_user_message(msg_text)
 
-    def stream_openai_response(client_id, ws_session_id):
+        # Call this new streaming function instead of appending replies directly
+        threading.Thread(
+            target=stream_openai_response,
+            args=(client_id, ws_session_id)
+            ).start()
 
-        mt = client_get_msg_thread(client_id)
-
-        response = OAIUtils.completion_with_tools(
-            wrap=_oa_wrap,
-            model=config["model_version"],
-            temperature=config["model_temperature"],
-            instructions=ChatAICore.instrument_instructions(assistant_instructions),
-            role_and_content_msgs=mt.make_messages_for_completion(20),
-            tools_user_data=client_id,
-            stream=True  # Enable streaming
-        )
-
-        # Create the assistant message, which will be added to the message thread
-        assist_msg = mt.create_assistant_message("")
-        src_id = assist_msg['src_id']
-
-        # Send the response in parts and collect the full text
-        reply_text = ""
-        for part in response:
-            if part is None:
-                #print("<END>")
-                continue
-            reply_text += part
-            #print(part, end="")
-            socketio.emit('stream', {'src_id': src_id, 'text': part}, room=ws_session_id)
-        #print("")
-
-        # End the stream with a special signal, e.g., 'END'
-        socketio.emit('stream', {'src_id': src_id, 'text': 'END'}, room=ws_session_id)
-
-        mt.update_message(src_id, reply_text)
-
-        if config['support_enable_factcheck']:
-            client_set_key(client_id, 'generate_fchecks', True)
-
-    # Call this new streaming function instead of appending replies directly
-    threading.Thread(
-        target=stream_openai_response,
-        args=(client_id, ws_session_id)
-        ).start()
-
-    # Respond with a "processing" status and with the user message ID
-    # We need the user message ID to match the addendums/fact-checks
-    return jsonify({'status': 'processing',
-                    'user_msg_id': user_msg['src_id']})
+        # Respond with a "processing" status and with the user message ID
+        # We need the user message ID to match the addendums/fact-checks
+        return jsonify({'status': 'processing',
+                        'user_msg_id': user_msg['src_id']})
+    except Exception as e:
+        logerr(f"KeyError: {str(e)}")
+        emit('stream', {'text': 'The session has been disconnected. Please reload the page.', 'isError': True}, room=ws_session_id)
+        return jsonify({'status': 'error', 'message': 'Session disconnected'})
 
 if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=8080, debug=True)

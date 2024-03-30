@@ -173,6 +173,7 @@
           .then(data => {
               const messages = data.messages;
               const chatbox = document.getElementById('chatbox');
+              console.log("Found " + messages.length + " messages in chat history.");
               messages.forEach(message => {
                   appendMessage(message, "{{ assistant_name }}");
               });
@@ -284,6 +285,124 @@
         new MutationObserver(updateLayout).observe(document.querySelector('.input-group'), { attributes: true, childList: true, subtree: true });
       }
 
+      function showErrorMessage(message) {
+          var errorStatusMessage = document.getElementById('error-status-message');
+          errorStatusMessage.innerText = message;
+          errorStatusMessage.style.display = 'block';
+      }
+
+      var socket;
+
+      function setupSocketEventListeners()
+      {
+        socket = io({
+            query: {
+                CustomClientId: getCookie('CustomClientId')
+            },
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: Infinity
+        });
+
+        // Event listeners for the socket
+        socket.on('connect', function() {
+          console.log('Socket connected. socket.id:', socket.id);
+          socket.emit('connect_ack');
+        });
+
+        socket.on('connected', function(data) {
+          console.log("Received custom 'connected' message. custom_client_id:", data.custom_client_id);
+          if (getCookie('CustomClientId') !== data.custom_client_id) {
+              console.error('CustomClientId cookie does not match the one received from the server.');
+          }
+          // Clear the connection timeout if connected successfully
+          clearTimeout(connectTimeout);
+        });
+        socket.on('connect_error', function(error) {
+          console.error('Connection error:', error);
+          // Set a timeout to reload the page after 1 minute
+          connectTimeout = setTimeout(function() {
+              showErrorMessage('Connection lost. Reloading page...');
+              location.reload();
+          }, CONNECT_TIMEOUT_MS);
+        });
+        socket.on('connect_timeout', (timeout) => {
+          console.error('WebSocket connection timeout:', timeout);
+        });
+        socket.on('error', function(data) {
+          console.error('Socket error:', data);
+          showErrorMessage('An error occurred.');
+        });
+        socket.on('reconnect', (attemptNumber) => {
+          console.log('WebSocket reconnected. Attempt number:', attemptNumber);
+        });
+        socket.on('reconnect_attempt', () => {
+          console.log('Attempting to reconnect...');
+        });
+        socket.on('reconnect_error', (error) => {
+          console.error('WebSocket reconnection error:', error);
+        });
+        socket.on('reconnect_failed', () => {
+          console.error('WebSocket reconnection failed.');
+        });
+
+        // Object to hold ongoing streams of messages
+        var currentData = {};
+
+        socket.on('stream', function(data) {
+            function onStreamEnd() {
+                console.log('End of message stream.');
+                document.getElementById('user-input').disabled = false; // Enable input box
+
+                // Bring back the focus to the input box, but only for desktop devices
+                //  to avoid the keyboard popping up on mobile devices
+                if (!isMobileDevice()) {
+                    document.getElementById('user-input').focus();
+                }
+
+                document.getElementById('send-button').disabled = false; // Enable send button
+                removeWaitingAssistMessage(); // Remove the waiting message
+                showHideButton('erase-button', true);
+                // Clear the stored stream data for this src_id
+                delete currentData[data.src_id];
+            }
+
+            // Handle error case
+            if (data.isError) {
+                onStreamEnd();
+                showErrorMessage(data.text ? data.text : 'An error occurred.');
+            } else if (data.text == 'END') {
+                // End of message stream
+                onStreamEnd();
+                pollForAddendums(); // Start polling for addendums
+            } else {
+                // Accumulate received message part
+                if (!currentData[data.src_id]) {
+                    currentData[data.src_id] = { content: [] };
+                }
+                currentData[data.src_id].content.push(data.text);
+
+                // Check if there is accumulated message content to display
+                if (currentData[data.src_id]) {
+                    joinedText = currentData[data.src_id].content.join('');
+                    //console.log('Sending accumulated message:', joinedText);
+                    appendMessage({
+                        role: 'assistant',
+                        src_id: data.src_id,
+                        content: [{type: 'text', value: joinedText}]},
+                        "{{ assistant_name }}");
+
+                    //updateLayout();
+                    adjustContentMargin();
+                    //if (!isMobileDevice()) {
+                        scrollToBottom();
+                    //}
+                }
+            }
+        });
+      }
+
       // When the DOM is fully loaded...
       // Main initialization
       document.addEventListener('DOMContentLoaded', async () => {
@@ -293,7 +412,6 @@
         updateContentLocalization();
         initializeTheme();
         setupEventListeners();
-        console.log('Loading chat history...');
         await loadChatHistory();
         console.log('Loaded chat history.');
 
@@ -302,6 +420,8 @@
 
         console.log('Updating layout...');
         updateLayout();
+        console.log('Setting up sockets...');
+        setupSocketEventListeners();
         console.log('Chat initialization complete.');
       });
 
@@ -411,78 +531,6 @@
           console.error('Cookie with name ' + name + ' not found.');
           return null;
       }
-
-      // Connect to the server's socket
-      var socket = io({
-          query: {
-              customClientId: getCookie('CustomClientId') // Assuming you have a function to get cookies by name
-          }
-      });
-
-      // Object to hold ongoing streams of messages
-      var currentData = {};
-
-      socket.on('stream', function(data) {
-          function onStreamEnd() {
-              console.log('End of message stream.');
-              document.getElementById('user-input').disabled = false; // Enable input box
-
-              // Bring back the focus to the input box, but only for desktop devices
-              //  to avoid the keyboard popping up on mobile devices
-              if (!isMobileDevice()) {
-                  document.getElementById('user-input').focus();
-              }
-
-              document.getElementById('send-button').disabled = false; // Enable send button
-              removeWaitingAssistMessage(); // Remove the waiting message
-              showHideButton('erase-button', true);
-              // Clear the stored stream data for this src_id
-              delete currentData[data.src_id];
-          }
-
-          // Handle error case
-          if (data.isError) {
-              onStreamEnd();
-
-              var elem = document.getElementById('error-status-message');
-              elem.style.display = 'block';
-              elem.innerHTML = data.text ? data.text : 'An error occurred.';
-          } else if (data.text == 'END') {
-              // End of message stream
-              onStreamEnd();
-              pollForAddendums(); // Start polling for addendums
-          } else {
-              // Accumulate received message part
-              if (!currentData[data.src_id]) {
-                  currentData[data.src_id] = { content: [] };
-              }
-              currentData[data.src_id].content.push(data.text);
-
-              // Check if there is accumulated message content to display
-              if (currentData[data.src_id]) {
-                  joinedText = currentData[data.src_id].content.join('');
-                  //console.log('Sending accumulated message:', joinedText);
-                  appendMessage({
-                      role: 'assistant',
-                      src_id: data.src_id,
-                      content: [{type: 'text', value: joinedText}]},
-                      "{{ assistant_name }}");
-
-                  //updateLayout();
-                  adjustContentMargin();
-                  //if (!isMobileDevice()) {
-                      scrollToBottom();
-                  //}
-              }
-          }
-      });
-
-      socket.on('connected', function(data) {
-          console.log('Connected with custom_client_id', data.custom_client_id);
-          if (getCookie('CustomClientId') !== data.custom_client_id) {
-              console.error('CustomClientId cookie does not match the one received from the server.');
-          }
-      });
     </script>
   </body>
 </html>

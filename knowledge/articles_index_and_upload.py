@@ -3,6 +3,10 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 import os
+import json
+import shutil
+import time
+
 import chromadb
 from llama_index.core import (
     VectorStoreIndex, SimpleDirectoryReader, StorageContext, load_index_from_storage
@@ -15,6 +19,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app_web.Common.StorageCloud import StorageCloud as Storage
 from app_web.Common.logger import *
+
+from typing import List
 
 """
 This script will index all *.md files found in SOURCE_DIR.
@@ -34,7 +40,50 @@ CHROMA_PERSIST_DIR = "_chroma_db"
 TEST_DIR_PREFIX = "_tmp_test_"
 
 #===================================================================
+from llama_index.core.schema import Document
+import uuid
+
+# Assuming 'articles' is a list of article dictionaries loaded from your JSON files
+def prepare_documents_for_indexing(articles: List[dict]) -> List[Document]:
+    prepared_documents = []
+    for article in articles:
+        # Create a Document instance for each article
+        # Adapt this based on the actual structure of your articles and what Document expects
+        doc = Document(
+            text=article.get('content', '') + '\n' + json.dumps(article.get('recipe', ''), ensure_ascii=False),
+            metadata={
+                'title': article.get('title', ''),
+                'url': article.get('url', ''),
+                # Include other metadata as needed
+            },
+            id_=article.get('url', str(uuid.uuid4())),  # Use URL as ID, or generate if not available
+        )
+        prepared_documents.append(doc)
+
+    return prepared_documents
+
+def load_documents(source_dir):
+    documents = []
+    for filename in os.listdir(source_dir):
+        if not filename.endswith(".json"):
+            continue
+
+        logmsg(f"Loading from file {source_dir}/{filename}...")
+
+        with open(os.path.join(source_dir, filename), 'r', encoding='utf-8') as file:
+            articles = json.load(file)
+            for article in articles:
+                documents.append(article)
+
+    return prepare_documents_for_indexing(documents)
+
 def create_index_and_db(force_reindex=False):
+
+    # Clear existing database if reindexing
+    if force_reindex:
+        shutil.rmtree(INDEX_PERSIST_DIR)
+        shutil.rmtree(CHROMA_PERSIST_DIR)
+
     # Initialize Chroma client
     db = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
     chroma_collection = db.get_or_create_collection("quickstart")
@@ -48,15 +97,42 @@ def create_index_and_db(force_reindex=False):
     docstore_file = os.path.join(INDEX_PERSIST_DIR, "docstore.json")
     if force_reindex or not os.path.isfile(docstore_file):
         logmsg("Loading documents and creating index...")
-        documents = SimpleDirectoryReader(SOURCE_DIR).load_data()
+        #documents = SimpleDirectoryReader(SOURCE_DIR).load_data()
+        documents = load_documents(SOURCE_DIR)
+        start_time = time.time()
         logmsg(f"Indexing {len(documents)} documents...")
         storage_context = StorageContext.from_defaults(vector_store=vector_store)
         index = VectorStoreIndex.from_documents(documents, storage_context=storage_context)
         index.storage_context.persist(persist_dir=INDEX_PERSIST_DIR)
+        logmsg(f"Indexing completed in {time.time() - start_time:.2f} seconds.")
     else:
-        logmsg("Loading existing index...")
+        logmsg("Loading existing storage content...")
         storage_context = StorageContext.from_defaults(persist_dir=INDEX_PERSIST_DIR, vector_store=vector_store)
+        logmsg("Loading existing index...")
         index = load_index_from_storage(storage_context)
+        logmsg("Done loading index.")
+
+def rag_search_knowledge_base(search_str, query_engine):
+    similarity_top_k = 5
+
+    retrieved_docs = query_engine.retrieve(search_str)
+
+    results = []
+    for doc in retrieved_docs[:similarity_top_k]:
+        score = doc.score
+        text = doc.text
+        metadata = doc.node.extra_info
+
+        logmsg(f"node.text: {doc.node.text}")
+
+        result = {
+            "score": score,
+            "text": text,
+            "metadata": metadata
+        }
+        results.append(result)
+
+    return json.dumps(results)
 
 def test_query(index_perist_dir, chroma_persist_dir, search_str):
     # Initialize Chroma client
@@ -68,8 +144,9 @@ def test_query(index_perist_dir, chroma_persist_dir, search_str):
     storage_context = StorageContext.from_defaults(persist_dir=index_perist_dir, vector_store=vector_store)
     index = load_index_from_storage(storage_context)
 
-    query = index.as_query_engine()
-    response = query.query(search_str)
+    query_engine = index.as_query_engine()
+    #response = query_engine.query(search_str)
+    response = rag_search_knowledge_base(search_str, query_engine)
     logmsg(f"Query: {search_str}")
     logmsg(f"Response: {response}")
 
@@ -136,7 +213,7 @@ def test_download_from_storage():
 #===================================================================
 if __name__ == "__main__":
     # First create the index and the database
-    #create_index_and_db(force_reindex=True)
+    create_index_and_db(force_reindex=False)
     # Do a test query
     test_query(
         INDEX_PERSIST_DIR,

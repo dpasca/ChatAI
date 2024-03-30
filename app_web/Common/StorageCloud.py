@@ -7,11 +7,16 @@
 import os
 from io import BytesIO
 import boto3
+from boto3.s3.transfer import S3Transfer, TransferConfig  # Make sure to add this line
+from botocore.exceptions import ClientError
 from datetime import datetime, timezone
+import tempfile
+import shutil
 #import logging
 #boto3.set_stream_logger('boto3.resources', level=logging.DEBUG)
 from botocore.exceptions import ClientError
 from .logger import *
+from concurrent import futures
 
 class StorageCloud:
     def __init__(self, bucket, access_key, secret_key, endpoint):
@@ -47,35 +52,54 @@ class StorageCloud:
             ExtraArgs={'ACL': 'public-read'}
         )
 
+    def download_file_multipart(self, local_path, cloud_path, part_size=10*1024*1024, max_workers=5):
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+        # Get the total size of the file
+        obj = self.s3.head_object(Bucket=self.bucket, Key=cloud_path)
+        file_size = obj['ContentLength']
+
+        # Calculate the number of parts
+        parts = (file_size + part_size - 1) // part_size
+
+        # Inner function to access `self` and download a part
+        def download_part(part_number):
+            start_byte = part_number * part_size
+            end_byte = min((part_number + 1) * part_size - 1, file_size - 1)
+            range_header = f"bytes={start_byte}-{end_byte}"
+            response = self.s3.get_object(Bucket=self.bucket, Key=cloud_path, Range=range_header)
+            # Open the file in append binary mode to write the downloaded part
+            with open(local_path, 'r+b' if os.path.exists(local_path) else 'wb') as file:
+                file.seek(start_byte)
+                file.write(response['Body'].read())
+
+        with futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            logmsg(f"Downloading {cloud_path} to {local_path} in {parts} parts...")
+            futures_list = [executor.submit(download_part, part) for part in range(parts)]
+            for future in futures.as_completed(futures_list):
+                future.result()  # Wait for each part to download
+
+    def does_file_match_cloud(self, local_path, cloud_path):
+        # Get cloud file's size and last modification time
+        cloud_object = self.s3.head_object(Bucket=self.bucket, Key=cloud_path)
+        cloud_size = cloud_object['ContentLength']
+        cloud_dt = cloud_object['LastModified']
+
+        # Get local file's size and modification time
+        local_size = os.path.getsize(local_path)
+        local_mtime = os.path.getmtime(local_path)
+        local_dt = datetime.fromtimestamp(local_mtime, timezone.utc)
+
+        return cloud_dt <= local_dt and local_size == cloud_size
+
     def download_file(self, local_path, cloud_path, only_if_newer=True):
+        if only_if_newer and os.path.exists(local_path) and self.does_file_match_cloud(local_path, cloud_path):
+            logmsg(f"Local file {local_path} is up-to-date. Skipping download.")
+            return
+
         try:
-            if only_if_newer:
-                # Check if local file exists and get its modification time
-                if os.path.exists(local_path):
-                    local_mtime = os.path.getmtime(local_path)
-                    local_dt = datetime.fromtimestamp(local_mtime, timezone.utc)
-                else:
-                    local_dt = datetime.fromtimestamp(0, timezone.utc)  # Epoch if file doesn't exist
-
-                # Get cloud file's last modification time
-                cloud_object = self.s3.head_object(Bucket=self.bucket, Key=cloud_path)
-                cloud_dt = cloud_object['LastModified']
-
-                # Compare modification times and download if cloud is newer
-                if cloud_dt > local_dt:
-                    logmsg(f"Cloud file {cloud_path} is newer. Downloading...")
-                    # Directly call S3 download without the newer check to avoid recursion
-                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                    with open(local_path, 'wb') as file:
-                        self.s3.download_fileobj(self.bucket, cloud_path, file)
-                else:
-                    logmsg(f"Local file {local_path} is up-to-date. Skipping download.")
-            else:
-                # If only_if_newer is False, proceed to download without checking
-                logmsg(f"Downloading file {cloud_path} to {local_path} without date check...")
-                os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                with open(local_path, 'wb') as file:
-                    self.s3.download_fileobj(self.bucket, cloud_path, file)
+            self.download_file_multipart(local_path, cloud_path)
         except ClientError as e:
             if e.response['Error']['Code'] == 'NoSuchKey':
                 logerr(f"File {cloud_path} does not exist in the cloud storage.")
@@ -87,6 +111,9 @@ class StorageCloud:
         file_list = []
         for root, dirs, files in os.walk(local_dir):
             for filename in files:
+                # Exclude obvious nuisance files
+                if filename == ".DS_Store":
+                    continue
                 local_path = os.path.join(root, filename)
                 relative_path = os.path.relpath(local_path, local_dir)
                 cloud_path = os.path.join(target_dir, relative_path)

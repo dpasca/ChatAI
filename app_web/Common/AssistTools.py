@@ -232,7 +232,8 @@ class RAGSystem:
             text = doc.text
             metadata = doc.node.extra_info
 
-            logmsg(f"node.text: {doc.node.text}")
+            # Uncomment to see the found snippets
+            #logmsg(f"node.text: {doc.node.text}")
 
             result = {
                 "score": score,

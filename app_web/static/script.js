@@ -5,6 +5,10 @@
 // Desc: Support for chat.html
 //==================================================================
 
+let connectTimeout;
+
+const CONNECT_TIMEOUT_MS = 60000;
+
 function showHideButton(buttonId, show) {
     document.getElementById(buttonId).style.display = show ? 'block' : 'none';
 }
