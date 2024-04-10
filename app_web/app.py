@@ -313,6 +313,7 @@ def index():
             app_title=config["app_title"],
             navbar_dev=config["navbar_dev"],
             navbar_dev_url=config["navbar_dev_url"],
+            server_url=config["server_url"],
             assistant_name=config["assistant_name"],
             assistant_avatar=config["assistant_avatar"],
             favicon_name=config["favicon_name"],

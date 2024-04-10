@@ -13,22 +13,36 @@ function showHideButton(buttonId, show) {
     document.getElementById(buttonId).style.display = show ? 'block' : 'none';
 }
 
-function postUserInfo() {
-// Send the user's time zone and user agent to the server
-let timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-let userAgent = navigator.userAgent;
-fetch('/api/user_info', {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-    'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-    timezone: timeZone,
-    user_agent: userAgent
-    })
+function handleError(response) {
+    if (!response.ok) {
+        return response.json().then(err => {
+            throw new Error(`Error: ${response.status}. Message: ${err.error || 'Unknown error'}`);
+        });
+    }
+    return response.json();
 }
-);
+
+async function postUserInfo() {
+  let timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let userAgent = navigator.userAgent;
+
+  try {
+    const response = await fetch(SERVER_URL+'/api/user_info', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        timezone: timeZone,
+        user_agent: userAgent
+      })
+    });
+
+    await handleError(response); // Use handleError to process the response
+  } catch (error) {
+    console.error('Error posting user info:', error);
+  }
 }
 
 // Instantiate markdown-it with Prism.js for syntax highlighting
@@ -302,16 +316,11 @@ function sendMessage(userInput, assistant_name) {
 }
 
 function pollForAddendums() {
-    fetch('/get_addendums', {
+    fetch(SERVER_URL+'/get_addendums', {
         method: 'GET',
         credentials: 'include'
     })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    })
+    .then(handleError)
     .then(data => {
         //console.log("Found addendums:", data.addendums);
         for (let addendum of data.addendums) {

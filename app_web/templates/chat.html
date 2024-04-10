@@ -122,6 +122,10 @@
 
     <script src="static/math_support.js"></script>
 
+    <script>
+      var SERVER_URL = "{{ server_url }}";
+    </script>
+
     <!-- Include our own script -->
     <script src="static/script.js"></script>
 
@@ -165,11 +169,11 @@
       function loadChatHistory() {
           postUserInfo(); // Initial send of user-info
           console.log("Loading chat history...");
-          fetch('/get_history', {
+          fetch(SERVER_URL+'/get_history', {
               method: "GET",
               credentials: 'include'
           })
-          .then(response => response.json())
+          .then(handleError)
           .then(data => {
               const messages = data.messages;
               const chatbox = document.getElementById('chatbox');
@@ -228,7 +232,7 @@
       //
       function clearChat() {
         postUserInfo(); // Send again the user-info
-        fetch('/clear_chat', {
+        fetch(SERVER_URL+'/clear_chat', {
           method: 'POST',
           credentials: 'include'
         })
@@ -295,9 +299,11 @@
 
       function setupSocketEventListeners()
       {
-        socket = io({
+        const ccid = getCookie('CustomClientId');
+        console.log('Creating socket connection to:' + SERVER_URL + ' with CustomClientId:' + ccid);
+        socket = io(SERVER_URL,{
             query: {
-                CustomClientId: getCookie('CustomClientId')
+                CustomClientId: ccid
             },
             reconnection: true,
             reconnectionDelay: 1000,
