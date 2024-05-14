@@ -62,6 +62,14 @@ const md = window.markdownit({
     }
 }).use(math_plugin);
 
+// Add custom renderer for links to open in a new tab
+if (window.config.openLinksInNewTab) {
+    md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
+        tokens[idx].attrPush(['target', '_blank']); // add new attribute
+        return self.renderToken(tokens, idx, options);
+    };
+}
+
 // Reduce indentation of code blocks for readability
 function reformatIndentation(codeString) {
     // Replace every occurrence of four spaces at the beginning of a line with two spaces

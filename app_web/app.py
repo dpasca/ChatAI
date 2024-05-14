@@ -141,6 +141,8 @@ def create_msg_thread(client_id, force_new) -> None:
     mt = None if force_new else client_get_msg_thread(client_id)
     if mt is None:
         mt = MsgThread.create_thread(_oa_wrap)
+        if greeting := config.get("assistant_greeting"):
+            mt.create_assistant_message(greeting)
         client_set_msg_thread(client_id, mt)
         logmsg("Created new thread with ID " + mt.thread_id)
 
@@ -213,9 +215,10 @@ socketio = SocketIO(app, async_mode=async_mode, cors_allowed_origins="*")
 @app.after_request
 def after_request_func(response):
     if os.getenv('DISABLE_CORS') == '1':
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-        response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
     return response
 
 #===============================================================================
@@ -309,15 +312,17 @@ def index():
     def do_render():
         # Render the chat page
         return render_template(
-            'chat.html',
+            config.get("chat_template", "chat.html"),
             app_title=config["app_title"],
             navbar_dev=config["navbar_dev"],
             navbar_dev_url=config["navbar_dev_url"],
-            server_url=config["server_url"],
+            server_url=config.get("server_url", ""),
             assistant_name=config["assistant_name"],
             assistant_avatar=config["assistant_avatar"],
             favicon_name=config["favicon_name"],
-            app_version=config["app_version"])
+            app_version=config["app_version"],
+            open_links_in_new_tab=config.get("open_links_in_new_tab", False),
+            )
 
     # Check if we have a custom client ID
     if 'CustomClientId' not in request.cookies:
@@ -422,11 +427,13 @@ def stream_openai_response(client_id, ws_session_id):
     assist_msg = mt.create_assistant_message("")
     src_id = assist_msg['src_id']
 
+    socketio.emit('stream', {'src_id': src_id, 'text': '$DUMMY_TOKEN$'}, room=ws_session_id)
+
     # Send the response in parts and collect the full text
     reply_text = ""
     for part in response:
         if part is None:
-            #print("<END>")
+            #print("$END_TOKEN$")
             continue
         reply_text += part
         #print(part, end="")
@@ -438,11 +445,11 @@ def stream_openai_response(client_id, ws_session_id):
 
     #print("")
 
-    # End the stream with a special signal, e.g., 'END'
+    # End the stream with a special signal, e.g., '$END_TOKEN$'
     try:
-        socketio.emit('stream', {'src_id': src_id, 'text': 'END'}, room=ws_session_id)
+        socketio.emit('stream', {'src_id': src_id, 'text': '$END_TOKEN$'}, room=ws_session_id)
     except Exception as e:
-        logerr(f"Error sending END message to session {ws_session_id}: {e}")
+        logerr(f"Error sending $END_TOKEN$ message to session {ws_session_id}: {e}")
 
     mt.update_message(src_id, reply_text)
 
