@@ -14,3 +14,4 @@ pydantic
 llama-index
 llama-index-vector-stores-chroma
 chromadb
+paramiko

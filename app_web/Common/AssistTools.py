@@ -13,11 +13,15 @@ from duckduckgo_search import DDGS
 from .logger import *
 from typing import Callable, Optional
 from .MsgThread import MsgThread as MsgThread
+from .ToolItem import ToolItem
+from .RAGSystem import RAGSystem
 
 # Directory for persisting llmaindex index data
 RAG_INDEX_PERSIST_DIR = "_index_data"
 # Directory for persisting Chroma data
 RAG_CHROMA_PERSIST_DIR = "_chroma_db"
+
+RAG_IMMEDIATE_SRC_DIR = "rag_immediate_src"
 
 #==================================================================
 # Define the super_get_user_info function
@@ -84,15 +88,6 @@ def ask_research_assistant(arguments=None):
                 query=arguments["query"],
                 tools_user_data=arguments["tools_user_data"])
 
-from typing import List, Dict, Any
-from pydantic import BaseModel
-
-class ToolItem(BaseModel):
-    name: str
-    function: Callable[[dict], Any]
-    requires_assistant: bool = False
-    definition: Dict[str, Any]
-
 tool_items = [
     ToolItem(
         name="get_user_info",
@@ -150,105 +145,6 @@ def fallback_tool_function(name, arguments):
     return ddgsTextSearch(query, max_results=3)
 
 #==================================================================
-# RAG (Retrieval Augmented Generation) tools
-import chromadb
-from llama_index.core import StorageContext, load_index_from_storage
-from llama_index.vector_stores.chroma import ChromaVectorStore
-
-class RAGSystem:
-    def __init__(self, storage, rag_query_instructions):
-        self.tool_items = []
-        self.index = None
-        self.query_engine = None
-        self.rag_query_instructions = rag_query_instructions
-
-        try:
-            logmsg("Downloading RAG index and Chroma data...")
-            storage.download_dir(
-                local_dir=RAG_INDEX_PERSIST_DIR,
-                cloud_dir=RAG_INDEX_PERSIST_DIR,
-                use_file_listing=True)
-            storage.download_dir(
-                local_dir=RAG_CHROMA_PERSIST_DIR,
-                cloud_dir=RAG_CHROMA_PERSIST_DIR,
-                use_file_listing=True)
-        except Exception as e:
-            logerr(f"Error downloading RAG index: {e}")
-            return
-
-        # Initialize Chroma client
-        logmsg("Initializing Chroma client...")
-        chdb = chromadb.PersistentClient(path=RAG_CHROMA_PERSIST_DIR)
-        chroma_collection = chdb.get_or_create_collection("quickstart")
-        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-
-        logmsg("Loading documents and creating index...")
-        storage_context = StorageContext.from_defaults(
-            persist_dir=RAG_INDEX_PERSIST_DIR,
-            vector_store=vector_store)
-
-        # Load the index
-        logmsg("Loading existing index...")
-        self.index = load_index_from_storage(storage_context)
-        self.query_engine = self.index.as_query_engine()
-
-        # Append the RAG tool definition
-        logmsg("Creating RAG tool definition")
-        self.tool_items.append(
-            ToolItem(
-                name="search_knowledge_base",
-                function=self.rag_search_knowledge_base,
-                requires_assistant=False,
-                definition={
-                    "name": "search_knowledge_base",
-                    "description": "Search the knowledge base for information",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query"
-                            }
-                        },
-                        "required": ["query"]
-                    }
-                }
-            )
-        )
-
-    def rag_search_knowledge_base(self, arguments):
-        query = arguments["query"]
-
-        if inst := self.rag_query_instructions:
-            query = query + ". " + inst
-
-        similarity_top_k = 5
-
-        retrieved_docs = self.query_engine.retrieve(query)
-
-        results = []
-        for doc in retrieved_docs[:similarity_top_k]:
-            score = doc.score
-            text = doc.text
-            metadata = doc.node.extra_info
-
-            # Uncomment to see the found snippets
-            #logmsg(f"node.text: {doc.node.text}")
-
-            result = {
-                "score": score,
-                "text": text,
-                "metadata": metadata
-            }
-            results.append(result)
-
-        return json.dumps(results)
-
-    def get_tool_items(self):
-        return self.tool_items
-
-
-#==================================================================
 tool_items_dict = {}
 
 def initialize_tools(
@@ -289,8 +185,19 @@ def initialize_tools(
         )
 
     # Try to initialize the RAG
-    if enable_rag and storage is not None:
-        rag_sys = RAGSystem(storage, rag_query_instructions)
+    if enable_rag:
+        has_persist_dir = os.path.exists(RAG_INDEX_PERSIST_DIR)
+        has_imm_dir = os.path.exists(RAG_IMMEDIATE_SRC_DIR)
+        if not (has_persist_dir or has_imm_dir):
+            logwarn("RAG directories not found. Disabling RAG.")
+            enable_rag = False
+
+        rag_sys = RAGSystem(rag_query_instructions)
+        if has_persist_dir:
+            rag_sys.add_persistent_storage(RAG_INDEX_PERSIST_DIR, RAG_CHROMA_PERSIST_DIR)
+        if has_imm_dir:
+            rag_sys.add_immediate_storage(RAG_IMMEDIATE_SRC_DIR)
+
         tool_items.extend(rag_sys.get_tool_items())
 
     # Finally initialize the dictionary only with the enabled tools

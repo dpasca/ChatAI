@@ -6,6 +6,7 @@ import os
 import json
 import shutil
 import time
+import re
 
 import chromadb
 from llama_index.core import (
@@ -22,22 +23,12 @@ from app_web.Common.logger import *
 
 from typing import List
 
-"""
-This script will index all *.md files found in SOURCE_DIR.
-The index will be persisted to INDEX_PERSIST_DIR.
-The Chroma data will be persisted to CHROMA_PERSIST_DIR.
-These persist directories will then be uploaded via SCP to
-the remote server.
-"""
-
 # Where the articles to index are located
 SOURCE_DIR = "_source_for_db"
 # Directory for persisting llmaindex index data
 INDEX_PERSIST_DIR = "_index_data"
 # Directory for persisting Chroma data
 CHROMA_PERSIST_DIR = "_chroma_db"
-
-#REMOTE_KEY = "/home/flask/.ssh/id_rsa"
 
 #===================================================================
 from llama_index.core.schema import Document
@@ -49,6 +40,16 @@ def prepare_documents_for_indexing(articles: List[dict]) -> List[Document]:
     for article in articles:
         # Create a Document instance for each article
         # Adapt this based on the actual structure of your articles and what Document expects
+
+        # Use the URL as the document ID, or the title, or generate a unique ID
+        use_id = article.get('url')
+        if not use_id or use_id.strip() == '':
+            # Use the title, replace spaces with underscores, and remove special characters
+            title = article.get('title', '')
+            use_id = re.sub(r'\W+', '', title.replace(' ', '_'))
+        if not use_id:
+            use_id = str(uuid.uuid4())
+
         doc = Document(
             text=article.get('content', '') + '\n' + json.dumps(article.get('recipe', ''), ensure_ascii=False),
             metadata={
@@ -56,7 +57,7 @@ def prepare_documents_for_indexing(articles: List[dict]) -> List[Document]:
                 'url': article.get('url', ''),
                 # Include other metadata as needed
             },
-            id_=article.get('url', str(uuid.uuid4())),  # Use URL as ID, or generate if not available
+            id_=use_id
         )
         prepared_documents.append(doc)
 
@@ -81,8 +82,10 @@ def create_index_and_db(force_reindex=False):
 
     # Clear existing database if reindexing
     if force_reindex:
-        shutil.rmtree(INDEX_PERSIST_DIR)
-        shutil.rmtree(CHROMA_PERSIST_DIR)
+        if os.path.exists(INDEX_PERSIST_DIR):
+            shutil.rmtree(INDEX_PERSIST_DIR)
+        if os.path.exists(CHROMA_PERSIST_DIR):
+            shutil.rmtree(CHROMA_PERSIST_DIR)
 
     # Initialize Chroma client
     db = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
@@ -93,37 +96,55 @@ def create_index_and_db(force_reindex=False):
     if not os.path.exists(INDEX_PERSIST_DIR):
         os.makedirs(INDEX_PERSIST_DIR, exist_ok=True)
 
-    # Check if docstore.json exists, if not, prepare for indexing
+    logmsg("Loading documents...")
+    #documents = SimpleDirectoryReader(SOURCE_DIR).load_data()
+    documents = load_documents(SOURCE_DIR)
+
+    start_time = time.time()
+
+    # Check if docstore.json exists
     docstore_file = os.path.join(INDEX_PERSIST_DIR, "docstore.json")
     if force_reindex or not os.path.isfile(docstore_file):
-        logmsg("Loading documents and creating index...")
-        #documents = SimpleDirectoryReader(SOURCE_DIR).load_data()
-        documents = load_documents(SOURCE_DIR)
-        start_time = time.time()
-        logmsg(f"Indexing {len(documents)} documents...")
+        logmsg("Creating new index...")
         storage_context = StorageContext.from_defaults(vector_store=vector_store)
+        logmsg(f"Indexing {len(documents)} documents...")
         index = VectorStoreIndex.from_documents(documents, storage_context=storage_context)
-        index.storage_context.persist(persist_dir=INDEX_PERSIST_DIR)
-        logmsg(f"Indexing completed in {time.time() - start_time:.2f} seconds.")
     else:
-        logmsg("Loading existing storage content...")
+        logmsg("Loading existing index for update...")
         storage_context = StorageContext.from_defaults(persist_dir=INDEX_PERSIST_DIR, vector_store=vector_store)
-        logmsg("Loading existing index...")
         index = load_index_from_storage(storage_context)
-        logmsg("Done loading index.")
 
-def rag_search_knowledge_base(search_str, query_engine):
-    similarity_top_k = 5
+        # NOTE: "NotImplementedError: Vector store integrations that store text in the vector store are not supported by ref_doc_info yet."
 
-    retrieved_docs = query_engine.retrieve(search_str)
+        #logmsg("Updating index with new documents...")
+        #new_documents = []
+        #for doc in documents:
+        #    if doc.id_ in index.ref_doc_info:
+        #        new_documents.append(doc)
+
+        #logmsg(f"Adding {len(new_documents)} new documents to the index...")
+        #index.add_documents(new_documents)
+
+    index.storage_context.persist(persist_dir=INDEX_PERSIST_DIR)
+    logmsg(f"Indexing completed in {time.time() - start_time:.2f} seconds.")
+
+
+#===================================================================
+# TESTING STUFF
+def rag_search_knowledge_base(search_str, retriever):
+    #retrieved_docs = self.query_engine.retrieve(query)
+    retrieved_docs = retriever.retrieve(search_str)
+    #logmsg(f"Retrieved {len(retrieved_docs)} documents")
 
     results = []
-    for doc in retrieved_docs[:similarity_top_k]:
+    for doc in retrieved_docs:
         score = doc.score
         text = doc.text
         metadata = doc.node.extra_info
 
-        logmsg(f"node.text: {doc.node.text}")
+        # Uncomment to see the found snippets
+        #logmsg(f"score: {score}, metadata: {metadata}")
+        #logmsg(f"text: {doc.node.text}")
 
         result = {
             "score": score,
@@ -151,107 +172,16 @@ def test_query(index_perist_dir, chroma_persist_dir, search_str):
     logmsg(f"Response: {response}")
 
 #===================================================================
-import paramiko
-
-def upload_to_server(local_dir, remote_dir, hostname, username, key_filename=None):
-
-    unwanted_file_patterns = [
-        ".DS_Store",
-        ".gitignore",
-        "file_listing.txt"
-    ]
-
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    if key_filename:
-        ssh.connect(hostname, username=username, key_filename=key_filename)
-    else:
-        ssh.connect(hostname, username=username)
-
-    sftp = ssh.open_sftp()
-
-    # Create remote directory if it doesn't exist
-    try:
-        sftp.stat(remote_dir)
-    except FileNotFoundError:
-        logmsg(f"Creating remote directory: {remote_dir}")
-        mkdir_recursive(sftp, remote_dir)
-
-    for root, dirs, files in os.walk(local_dir):
-        for dir in dirs:
-            local_path = os.path.join(root, dir)
-            remote_path = os.path.join(remote_dir, os.path.relpath(local_path, local_dir))
-            try:
-                sftp.stat(remote_path)
-            except FileNotFoundError:
-                logmsg(f"Creating directory: {remote_path}")
-                sftp.mkdir(remote_path)
-
-        for file in files:
-            if any([unwanted in file for unwanted in unwanted_file_patterns]):
-                continue
-            local_path = os.path.join(root, file)
-            remote_path = os.path.join(remote_dir, os.path.relpath(local_path, local_dir))
-            logmsg(f"Uploading file: {local_path} -> {remote_path}")
-            sftp.put(local_path, remote_path)
-
-    sftp.close()
-    ssh.close()
-
-def mkdir_recursive(sftp, remote_dir):
-    dirs = remote_dir.split('/')
-    current_dir = ''
-    for dir in dirs:
-        current_dir += f'{dir}/'
-        try:
-            sftp.stat(current_dir)
-        except FileNotFoundError:
-            try:
-                print(f"Creating directory: {current_dir}")
-                sftp.mkdir(current_dir)
-            except PermissionError as e:
-                print(f"Permission denied while creating directory: {current_dir}")
-                print(f"Error: {str(e)}")
-                raise
-
-#===================================================================
 import argparse
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--remote_server", type=str, default=None, help="Remote server address")
-    parser.add_argument("--remote_path", type=str, default=None, help="Remote path for index and chroma db")
-    parser.add_argument("--remote_user", type=str, default="flask", help="Remote user")
-    args = parser.parse_args()
-
-    REMOTE_SERVER = args.remote_server
-    REMOTE_USER = args.remote_user
 
     # First create the index and the database
-    create_index_and_db(force_reindex=False)
+    # NOTE: forcing index for now, because update is not possible
+    create_index_and_db(force_reindex=True)
 
     if False: # Do a test query
         test_query(
             INDEX_PERSIST_DIR,
             CHROMA_PERSIST_DIR,
             "ricetta di marmellata alle fragole")
-
-    # Upload to remote server
-    # NOTE: this assume that the remote repo is located in /home/args.remote_user/args.remote_path/
-    #  With the DB dirs as:
-    #   - /home/args.remote_user/args.remote_path/_index_data
-    #   - /home/args.remote_user/args.remote_path/_chroma_db
-
-    upload_to_server(
-        INDEX_PERSIST_DIR,
-        os.path.join(args.remote_path, INDEX_PERSIST_DIR),
-        args.remote_server,
-        args.remote_user
-    )
-    upload_to_server(
-        CHROMA_PERSIST_DIR,
-        os.path.join(args.remote_path, CHROMA_PERSIST_DIR),
-        args.remote_server,
-        args.remote_user
-    )

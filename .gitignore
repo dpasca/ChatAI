@@ -1,7 +1,13 @@
 .env
+venv
 .DS_Store
 .vscode
 .vscode/settings.json
 __pycache__
-knowledge/_output
 _storage
+knowledge/_scraped_blob
+knowledge/_source_for_db
+_index_data
+_chroma_db
+_converted_md
+_tmp_test_*

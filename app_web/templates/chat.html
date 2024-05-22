@@ -19,11 +19,11 @@
 
     <title>{{ app_title }}</title>
     <script>
-      // Window configuration object
-      window.config = {
-          openLinksInNewTab: {{ open_links_in_new_tab | tojson | safe }},
-      };
-  </script>
+        // Window configuration object
+        window.config = {
+            openLinksInNewTab: {{ open_links_in_new_tab | tojson | safe }},
+        };
+    </script>
   </head>
   <body>
     <!-- Navbar -->
@@ -531,7 +531,7 @@
     </script>
 
     <!-- Socket.IO client -->
-    <script src="https://cdn.socket.io/4.4.0/socket.io.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
     <script type="text/javascript">
       function getCookie(name) {
