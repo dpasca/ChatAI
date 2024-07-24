@@ -123,7 +123,7 @@ telling them to follow some links.
 
     def genCompletion(self, wrap, instructions, convo, tools_user_data=None):
         from .OAIUtils import completion_with_tools
-        return completion_with_tools(
+        response = completion_with_tools(
                 wrap=wrap,
                 model=self.model,
                 temperature=self.temperature,
@@ -132,14 +132,28 @@ telling them to follow some links.
                 tools_user_data=tools_user_data,
                 stream=False)
 
+        # Consume the generator to get the actual response
+        response_text = "".join(response)
+        logmsg(f"Full completion response: {response_text}")
+        return response_text
+
     def gen_completion_ret_json(self, wrap, instructions, convo, tools_user_data=None):
-        response = self.genCompletion(wrap, self.instructionsForFactCheck, convo, tools_user_data)
-        logmsg(f"Response: {response}")
+        response = self.genCompletion(wrap, instructions, convo, tools_user_data)
+        logmsg(f"Raw completion response: {response}")
+
         # Handle the GPT-3.5 bug for when the response is more than one JSON object
         fixed_response = ConvoJudge.extract_first_json_object(response)
-        logmsg(f"Fixed response: {fixed_response}")
+        logmsg(f"Extracted JSON object: {fixed_response}")
+
+        # Check if the fixed_response is empty
+        if not fixed_response:
+            logwarn("Extracted JSON object is empty")
+            return "{}"
+
         # Convert the Python dictionary back to a JSON string if needed
-        return json.dumps(fixed_response)
+        json_response = json.dumps(fixed_response)
+        logmsg(f"Final JSON response: {json_response}")
+        return json_response
 
     def GenSummary(self, wrap):
         convo = self.buildConvoString(1000)
@@ -178,8 +192,10 @@ telling them to follow some links.
 
             if json_start < json_end:
                 json_str = response[json_start:json_end]
+                logmsg(f"Extracted JSON string: {json_str}")
                 return json.loads(json_str)
             else:
+                logwarn("No valid JSON object found in the response")
                 return {}
         except Exception as e:
             logerr(f"Error parsing JSON: {e}")
@@ -187,6 +203,7 @@ telling them to follow some links.
 
     def GenFactCheck(self, wrap, tools_user_data):
         n = len(self.srcMessages)
+        logmsg(f"GenFactCheck: Total messages: {n}")
         if n == 0:
             logmsg("No source messages found")
             return "{}"
@@ -196,6 +213,8 @@ telling them to follow some links.
         convo = ""
         staIdx = max(0, n - CONTEXT_MESSAGES)
         fcStartIdx = n - FACT_CHECK_MESSAGES
+
+        logmsg(f"GenFactCheck: Context start index: {staIdx}, Fact-check start index: {fcStartIdx}")
 
         # Only add context section if there are messages before the fact-checking section
         if staIdx < fcStartIdx:
@@ -209,6 +228,8 @@ telling them to follow some links.
         for index in range(fcStartIdx, n):
             srcMsg = self.srcMessages[index]
             convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
+
+        logmsg(f"GenFactCheck: Conversation for fact-checking:\n{convo}")
 
         return self.gen_completion_ret_json(wrap, self.instructionsForFactCheck, convo, tools_user_data)
 

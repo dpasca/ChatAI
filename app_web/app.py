@@ -381,6 +381,7 @@ def get_addendums():
     logmsg("In route /get_addendums")
     # Send to index page if we don't have a working message thread
     if (client_id := request.cookies.get('CustomClientId')) is None:
+        logerr("No client ID found")
         return jsonify({'error': 'No client ID found'}), 400
 
     if not client_has_msg_thread(client_id):
@@ -388,23 +389,26 @@ def get_addendums():
 
     # Do we have fact-checks to return
     do_gen_fc = client_consume_key(client_id, 'generate_fchecks')
+    logmsg(f"generate_fchecks flag for client {client_id}: {do_gen_fc}")
     if do_gen_fc is None or not do_gen_fc:
+        logmsg(f"No pending fact-checks for client {client_id}")
         return jsonify({'addendums': [], 'message': 'No pending fact-checks', 'final': True}), 200
 
     # We get the fact checks directly in JSON format
     fc_str = client_get_msg_thread(client_id).gen_fact_check(tools_user_data=client_id)
     if fc_str is None:
+        logmsg(f"No fact-checks generated for client {client_id}")
         return jsonify({'addendums': [], 'message': 'No pending fact-checks', 'final': True}), 200
 
-    logmsg(f"Got fact-checks: {fc_str}")
+    logmsg(f"Got fact-checks for client {client_id}: {fc_str}")
 
     try:
         fc = json.loads(fc_str)
     except ValueError as e:
-        logerr(f"Error parsing fact-checks: {e}")
+        logerr(f"Error parsing fact-checks for client {client_id}: {e}")
         return jsonify({'addendums': [], 'message': 'Error parsing fact-checks', 'final': True}), 200
 
-    logmsg(f"FC JSON {fc}")
+    #logmsg(f"FC JSON {fc}")
 
     return jsonify({'addendums': [fc], 'final': True}), 200
 
@@ -455,6 +459,7 @@ def stream_openai_response(client_id, ws_session_id):
 
     if config['support_enable_factcheck']:
         client_set_key(client_id, 'generate_fchecks', True)
+        logmsg(f"Set generate_fchecks to True for client {client_id}")
 
 @socketio.on('send_message')
 def handle_send_message(json, methods=['GET', 'POST']):

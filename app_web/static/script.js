@@ -324,6 +324,7 @@ function sendMessage(userInput, assistant_name) {
 }
 
 function pollForAddendums() {
+    console.log("Polling for addendums...");
     fetch(SERVER_URL+'/get_addendums', {
         method: 'GET',
         credentials: 'include'
@@ -331,16 +332,17 @@ function pollForAddendums() {
     .then(handleError)
     .then(data => {
         //console.log("Found addendums:", data.addendums);
+        console.log("Received addendums data:", data);
         for (let addendum of data.addendums) {
             // Check if the addendim has fact-check array
             if (addendum.hasOwnProperty('fact_checks') && addendum.fact_checks.length > 0) {
-                //console.log("Found fact-checks:", addendum.fact_checks);
+                console.log("Processing fact-checks:", addendum.fact_checks);
                 for (let fcheck of addendum.fact_checks) {
                     appendFactCheck(fcheck);
                 }
             }
             else {
-                //console.log("No fact-checks found !!");
+                console.log("No fact-checks found in addendum");
             }
         }
         // See if we have a 'message'
@@ -348,10 +350,13 @@ function pollForAddendums() {
         //    console.log("Found message:", data.message);
         //}
         if (!data.final) {
+            console.log("Scheduling next addendum poll");
             setTimeout(pollForAddendums, 1000); // Poll at a fixed interval
+        } else {
+            console.log("Addendum polling complete");
         }
     })
     .catch(error => {
-        console.error('Error during fetch:', error);
+        console.error('Error during addendum fetch:', error);
     });
 }
