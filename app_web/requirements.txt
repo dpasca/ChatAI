@@ -1,3 +1,4 @@
+pip==24.1.2 # Need a recent pip for brave-search to install !
 # Requirements for the Web App !
 flask
 Flask-Session
