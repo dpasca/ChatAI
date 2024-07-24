@@ -469,6 +469,7 @@ def handle_send_message(json, methods=['GET', 'POST']):
     client_id = request.args.get('CustomClientId')
 
     msg_text = json['message']
+    client_src_id = json['src_id']
 
     try:
         # Ensure there's an active message thread
@@ -477,7 +478,7 @@ def handle_send_message(json, methods=['GET', 'POST']):
             return  # Exit if there's no usable message thread
 
         # Create the user message (will be used as context for the completion)
-        user_msg = client_get_msg_thread(client_id).create_user_message(msg_text)
+        user_msg = client_get_msg_thread(client_id).create_user_message(msg_text, client_src_id)
 
         # Call this new streaming function instead of appending replies directly
         threading.Thread(

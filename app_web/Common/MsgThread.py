@@ -115,10 +115,10 @@ class MsgThread(BaseModel):
     def gen_fact_check(self, tools_user_data=None):
         return self.judge.GenFactCheck(self.wrap, tools_user_data)
 
-    def create_message(self, role, content) -> dict:
+    def create_message(self, role, content, src_id=None) -> dict:
         # Wrap content in a list containing one dictionary
         message = {
-            "src_id": f"msg_{uuid.uuid4()}",
+            "src_id": src_id if src_id is not None else f"msg_{uuid.uuid4()}",
             "created_at": time.time(),
             "role": role,
             "content": [{"type": "text", "value": content}]  # Now a list of dictionaries
@@ -136,8 +136,8 @@ class MsgThread(BaseModel):
         logerr(f"Message with src_id {src_id} not found. Ignoring update.")
         return None
 
-    def create_user_message(self, content) -> dict:
-        return self.create_message("user", MsgThread.instrument_user_message(content))
+    def create_user_message(self, content, src_id) -> dict:
+        return self.create_message("user", MsgThread.instrument_user_message(content), src_id)
 
     def create_assistant_message(self, content) -> dict:
         return self.create_message("assistant", content)

@@ -300,9 +300,10 @@ function sendMessage(userInput, assistant_name) {
     sendButton.disabled = true; // Disable send button
 
     // Construct a message object with the expected format
+    const clientMsgId = "clientmsg_" + Date.now().toString();
     const userMessage = {
         role: 'user',
-        src_id: "PLACEHOLDER_" + Date.now().toString(),
+        src_id: clientMsgId,
         content: [{
             type: 'text',
             value: userInput
@@ -315,7 +316,7 @@ function sendMessage(userInput, assistant_name) {
     appendWaitingAssistMessage(assistant_name);
 
     // Now, emit the message through the WebSocket instead of making an HTTP request
-    socket.emit('send_message', { message: userInput });
+    socket.emit('send_message', { message: userInput, src_id: clientMsgId });
 
     // Reset input area
     var inputBox = document.getElementById('user-input');

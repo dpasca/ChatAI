@@ -57,7 +57,7 @@ Reply in the following format:
   "fact_checks": [
     {
       "role": "<role of the assertion>",
-      "msg_id": "<message id>",
+      "msg_id": "<exact message id as provided in the input>",
       "correctness": <degree of correctness 0 to 5>,
       "rebuttal": "<extremely short rebuttal, inclusive of references>",
       "links": [
@@ -134,20 +134,20 @@ telling them to follow some links.
 
         # Consume the generator to get the actual response
         response_text = "".join(response)
-        logmsg(f"Full completion response: {response_text}")
+        #logmsg(f"Full completion response: {response_text}")
         return response_text
 
     def gen_completion_ret_json(self, wrap, instructions, convo, tools_user_data=None):
         response = self.genCompletion(wrap, instructions, convo, tools_user_data)
-        logmsg(f"Raw completion response: {response}")
+        #logmsg(f"Raw completion response: {response}")
 
         # Handle the GPT-3.5 bug for when the response is more than one JSON object
         fixed_response = ConvoJudge.extract_first_json_object(response)
-        logmsg(f"Extracted JSON object: {fixed_response}")
+        #logmsg(f"Extracted JSON object: {fixed_response}")
 
         # Check if the fixed_response is empty
         if not fixed_response:
-            logwarn("Extracted JSON object is empty")
+            logwarn("Could  not extract JSON object from response: {response}")
             return "{}"
 
         # Convert the Python dictionary back to a JSON string if needed
@@ -192,10 +192,10 @@ telling them to follow some links.
 
             if json_start < json_end:
                 json_str = response[json_start:json_end]
-                logmsg(f"Extracted JSON string: {json_str}")
+                #logmsg(f"Extracted JSON string: {json_str}")
                 return json.loads(json_str)
             else:
-                logwarn("No valid JSON object found in the response")
+                logwarn(f"No valid JSON object found in the response: {response}")
                 return {}
         except Exception as e:
             logerr(f"Error parsing JSON: {e}")
