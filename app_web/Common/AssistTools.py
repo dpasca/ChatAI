@@ -9,8 +9,12 @@ import json
 import time
 import pytz
 from datetime import datetime
+
 from duckduckgo_search import DDGS
 from duckduckgo_search.exceptions import DuckDuckGoSearchException
+
+from brave import Brave
+
 from .logger import *
 from typing import Callable, Optional
 from .MsgThread import MsgThread as MsgThread
@@ -55,9 +59,48 @@ def ddgsTextSearch(query, max_results=None):
                 logerr(f"DuckDuckGo search failed after {max_retries} attempts: {str(e)}")
                 return []
 
+def braveTextSearch(query, max_results=None):
+    """
+    Perform a text search using the Brave Search API.
+    NOTE: It expects BRAVE_API_KEY to be set in the environment.
+
+    Returns:
+        list of dict: A list of search results, each result being a dictionary.
+    """
+    brave = Brave()
+    try:
+        results = brave.search(q=query, count=max_results)
+        logmsg(f"Raw Brave search results: {results}")
+
+        formatted_results = []
+        if hasattr(results, 'web') and hasattr(results.web, 'results'):
+            for result in results.web.results:
+                formatted_result = {
+                    'title': result.title,
+                    'url': str(result.url),
+                    'description': result.description,
+                    'language': result.language,
+                    'family_friendly': result.family_friendly,
+                    'thumbnail': result.thumbnail.src if result.thumbnail else ''
+                }
+                formatted_results.append(formatted_result)
+                logmsg(f"Formatted result: {formatted_result}")
+        else:
+            logmsg(f"Unexpected results structure: {type(results)}")
+
+        logmsg(f"## Formatted Brave search results: {formatted_results}")
+        return formatted_results
+    except Exception as e:
+        logerr(f"Failed to perform Brave search: {str(e)}")
+        return []
+
 # Define your functions
 def perform_web_search(arguments):
-    return ddgsTextSearch(arguments["query"], max_results=10)
+    # If we have a Brave API key, use it. Otherwise, use DuckDuckGo.
+    if "BRAVE_API_KEY" in os.environ:
+        return braveTextSearch(arguments["query"], max_results=10)
+    else:
+        return ddgsTextSearch(arguments["query"], max_results=10)
 
 def get_user_info(arguments=None):
     return { "user_info": super_get_user_info(arguments) }

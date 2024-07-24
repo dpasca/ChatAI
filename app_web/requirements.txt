@@ -6,6 +6,7 @@ flask_cors
 flask_socketio
 openai
 duckduckgo_search
+brave-search
 python-dotenv
 boto3
 pytz

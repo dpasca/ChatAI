@@ -3,8 +3,8 @@
 This is a chatbot based on OpenAI Completion API,
 implementing agents and function-calling for fact-checking.
 
-It runs both as a **console app** and as a **web app**, with a shared codebase.
-The web app is based on _Flask_ and it's tested to run on DigitalOcean App platform.
+It runs as a web app with _Flask_.
+It's been tested on DigitalOcean App platform and in a Droplet (server).
 
 This application is mainly developed by [Davide Pasca](https://github.com/dpasca).\
 See commits for other contributors.
@@ -17,7 +17,7 @@ See commits for other contributors.
 - RAG based on LLamaindex and Chroma DB
 - Real-time fact-checking using agents
 - Sense of time and location using prompt injection
-- Web search using function-calling and DuckDuckGo
+- Web search using function-calling and Brave/DuckDuckGo
 - Code syntax highlighting and LaTeX rendering
 
 ## Notes about Fact-Checking
@@ -30,27 +30,7 @@ in a thread away from the user.
 
 Fact-checking in web app runs in background, it takes some time to complete, but does not hang the interface.
 
-For the console app, fact-checking is currently done in the main thread, so it will hang the interface until it's done.
-
-## Quick start (console app)
-
-<img src="docs/agentchat_sshot_02.webp" width="500">
-
-### Setup
-
-It's suggested to use a virtual environment for Python (`conda` or `venv`).
-
-1. Set `OPENAI_API_KEY` (get it from the OpenAI dashboard) in your
-environment variables, or in a `.env` file in the `app_console` directory
-2. Install the dependencies: `cd app_console && pip install -r requirements.txt`
-
-### Run
-
-`cd app_console && python main.py`
-
-Use `python main.py --clear` to clear the chat history.
-
-## Web app
+## Quick start
 
 <img src="docs/chatai_sshot_01.webp" width="250">
 
@@ -62,6 +42,8 @@ Set them in the `.env` file for local development and in the app settings for pr
 - `OPENAI_API_KEY` is the API key for OpenAI (get it from the OpenAI dashboard)
 - `CHATAI_FLASK_SECRET_KEY` a random string used by Flask to encrypt cookies
   - e.g. `python -c "import os; print(os.urandom(24).hex())"`
+- `BRAVE_API_KEY` is the API key for Brave (https://brave.com/search/api/)
+  - If there is no Brave API key, the search will default to DuckDuckGo (unreliable)
 - `DO_SPACES_ACCESS_KEY` is the access key for DigitalOcean Spaces
 - `DO_SPACES_SECRET_KEY` is the secret key for DigitalOcean Spaces
 - `DO_STORAGE_CONTAINER` is the name of the container in DigitalOcean Spaces
@@ -91,6 +73,7 @@ It's suggested to use a virtual environment for Python.
 ```
 OPENAI_API_KEY=********
 CHATAI_FLASK_SECRET_KEY=********
+BRAVE_API_KEY=********
 DO_SPACES_ACCESS_KEY=********
 DO_SPACES_SECRET_KEY=********
 DO_STORAGE_CONTAINER=********
@@ -131,7 +114,7 @@ on how to build this.
 
 ### Optimization
 
-A size optimization script is provided for PDF files for the Assistant API.
+A size optimization script is provided for PDF files for RAG.
 
 This script assumes that images are not relevant.
 
