@@ -1,6 +1,9 @@
-requests
-beautifulsoup4
-pandas
-openpyxl
-python-docx
-paramiko
+# "knowledge" requirements specific to pre-build the knowledge index
+#  as opposed to lauch-time knowledge building
+requests      # HTTP library for making API requests
+beautifulsoup4 # Library for parsing HTML and XML documents
+pandas        # Data manipulation and analysis library
+openpyxl      # Library for reading/writing Excel 2010 xlsx/xlsm files
+python-docx   # Library for loading/writing Microsoft Word documents
+paramiko      # SSHv2 protocol implementation for secure connections
+chromadb      # Vector database for storing and querying embeddings
