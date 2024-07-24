@@ -1,4 +1,3 @@
-pip==24.1.2 # Need a recent pip for brave-search to install !
 # Requirements for the Web App !
 flask
 Flask-Session
@@ -7,7 +6,7 @@ flask_cors
 flask_socketio
 openai
 duckduckgo_search
-brave-search
+brave-search==0.1.8
 python-dotenv
 boto3
 pytz
