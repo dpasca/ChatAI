@@ -7,3 +7,5 @@ openpyxl      # Library for reading/writing Excel 2010 xlsx/xlsm files
 python-docx   # Library for loading/writing Microsoft Word documents
 paramiko      # SSHv2 protocol implementation for secure connections
 chromadb      # Vector database for storing and querying embeddings
+llama-index   # Library for building and querying vector indexes
+llama-index-vector-stores-chroma # Chroma vector store for llama-index
