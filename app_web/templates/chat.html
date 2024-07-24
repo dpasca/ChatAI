@@ -384,6 +384,8 @@
                 delete currentData[data.src_id];
             }
 
+            //console.log('Received message data:', data);
+
             // Handle error case
             if (data.isError) {
                 onStreamEnd();

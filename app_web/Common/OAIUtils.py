@@ -62,14 +62,9 @@ def handle_non_stream(response, wrap, model, temperature, messages, tools_user_d
         tools_out = apply_tools(response_msg.tool_calls, wrap, tools_user_data)
         messages.append(response_msg)  # Add the response message to the conversation
         messages += tools_out  # Add the messages from the tools
-        pt_response = wrap.CreateCompletion(
-            model=model,
-            temperature=temperature,
-            messages=messages,
-        )
-        return pt_response.choices[0].message.content
+        return None, False
     else:
-        return response_msg.content
+        return response_msg.content, True
 
 #==================================================================
 def handle_stream(response, wrap, model, temperature, messages, tools_user_data):
@@ -147,17 +142,12 @@ def handle_stream(response, wrap, model, temperature, messages, tools_user_data)
 
             fc_list = []
             full_calls = {}
-            # Post-tool call completion
-            pt_response = wrap.CreateCompletion(
-                model=model,
-                temperature=temperature,
-                messages=messages,
-                stream=True)
-
-            for pt_response_it in pt_response:
-                yield pt_response_it.choices[0].delta.content
+            yield None, False
         else:
-            yield response_d.content
+            #logmsg(f"response_d: {response_d}")
+            # Done if it has no conent and no tool calls
+            is_done = response_d.content is None and response_d.tool_calls is None
+            yield response_d.content, is_done
 
 #==================================================================
 def completion_with_tools(
@@ -180,16 +170,34 @@ def completion_with_tools(
         {"role": "system", "content": instructions},
     ] + role_and_content_msgs
 
-    response = wrap.CreateCompletion(
-        model=model,
-        temperature=temperature,
-        messages=messages,
-        tools=tools,
-        stream=stream,
-    )
+    while True:
+        response = wrap.CreateCompletion(
+            model=model,
+            temperature=temperature,
+            messages=messages,
+            tools=tools,
+            stream=stream,
+        )
 
-    if not stream:
-        yield handle_non_stream(response, wrap, model, temperature, messages, tools_user_data)
-    else:
-        yield from handle_stream(response, wrap, model, temperature, messages, tools_user_data)
+        is_done = False
+        if not stream:
+            content, is_done = handle_non_stream(response, wrap, model, temperature, messages, tools_user_data)
+            if content is not None:
+                yield content
+        else:
+            content = ""
+            for part, is_done in handle_stream(response, wrap, model, temperature, messages, tools_user_data):
+                if part is not None:
+                    if part == '':
+                        content += '\n'
+                    else:
+                        content += part
+                    yield part
+
+                if is_done:
+                    break
+
+        #logmsg(f"Content: {content}")
+        if is_done:
+            break
 

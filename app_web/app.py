@@ -447,15 +447,13 @@ def stream_openai_response(client_id, ws_session_id):
             logerr(f"Error sending message to session {ws_session_id}: {e}")
             break
 
-    #print("")
+    mt.update_message(src_id, reply_text)
 
     # End the stream with a special signal, e.g., '$END_TOKEN$'
     try:
         socketio.emit('stream', {'src_id': src_id, 'text': '$END_TOKEN$'}, room=ws_session_id)
     except Exception as e:
         logerr(f"Error sending $END_TOKEN$ message to session {ws_session_id}: {e}")
-
-    mt.update_message(src_id, reply_text)
 
     if config['support_enable_factcheck']:
         client_set_key(client_id, 'generate_fchecks', True)

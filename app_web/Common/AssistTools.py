@@ -10,6 +10,7 @@ import time
 import pytz
 from datetime import datetime
 from duckduckgo_search import DDGS
+from duckduckgo_search.exceptions import DuckDuckGoSearchException
 from .logger import *
 from typing import Callable, Optional
 from .MsgThread import MsgThread as MsgThread
@@ -40,9 +41,19 @@ def ddgsTextSearch(query, max_results=None):
     Returns:
         list of dict: A list of search results, each result being a dictionary.
     """
-    with DDGS() as ddgs:
-        results = [r for r in ddgs.text(query, max_results=max_results)]
-    return results
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            with DDGS() as ddgs:
+                results = [r for r in ddgs.text(query, max_results=max_results)]
+            return results
+        except DuckDuckGoSearchException as e:
+            if attempt < max_retries - 1:
+                logwarn(f"DuckDuckGo search failed. Retrying in 5 seconds. Attempt {attempt + 1}/{max_retries}")
+                time.sleep(5)
+            else:
+                logerr(f"DuckDuckGo search failed after {max_retries} attempts: {str(e)}")
+                return []
 
 # Define your functions
 def perform_web_search(arguments):
