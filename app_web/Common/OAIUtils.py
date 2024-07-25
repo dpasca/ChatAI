@@ -12,6 +12,38 @@ from .OpenAIWrapper import OpenAIWrapper
 from . import AssistTools
 from typing import List, Dict, Iterator
 
+# Handle OpenAI's API bug, where multi_tool_use.parallel is exposed
+def handle_multi_tool_use(call, tools_user_data):
+    messages = []
+    args = json.loads(call.function.arguments)
+    # args would look like this:
+    # {
+    #     'tool_uses': [
+    #         {'recipient_name': 'functions.perform_web_search', 'parameters': {'query': '中国政治新闻 2024'}},
+    #         {'recipient_name': 'functions.perform_web_search', 'parameters': {'query': '中国政治动态 2024'}}
+    #     ]
+    # }
+    for tool_use in args.get('tool_uses', []):
+        sub_name = tool_use['recipient_name'].split('.')[-1]  # This would be 'perform_web_search'
+        sub_args = tool_use['parameters']  # This would be {'query': '中国政治新闻 2024'} for the first item
+        sub_args["tools_user_data"] = tools_user_data
+
+        if sub_name in AssistTools.tool_items_dict:
+            function_response = AssistTools.tool_items_dict[sub_name].function(sub_args)
+        else:
+            function_response = AssistTools.fallback_tool_function(sub_name, sub_args)
+
+        content = json.dumps(function_response) if isinstance(function_response, dict) else function_response.response
+
+        messages.append({
+            "tool_call_id": call.id,
+            "role": "tool",
+            "name": sub_name,
+            "content": content,
+        })
+
+    return messages
+
 #==================================================================
 def apply_tools(tool_calls, wrap, tools_user_data) -> list:
     logmsg(f"Tool calls: {tool_calls}")
@@ -21,6 +53,15 @@ def apply_tools(tool_calls, wrap, tools_user_data) -> list:
         if call.function.name is None:
             logwarn(f"Tool call with missing name: {call}")
             continue
+
+        # Special case for OpenAI's bug
+        if call.function.name == "multi_tool_use.parallel":
+            try:
+                messages.extend(handle_multi_tool_use(call, tools_user_data))
+            except Exception as e:
+                logerr(f"Error handling multi_tool_use.parallel: {e}")
+            continue
+
         name = call.function.name
         try:
             args = json.loads(call.function.arguments) if call.function.arguments else {}
