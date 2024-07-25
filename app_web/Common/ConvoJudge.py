@@ -14,6 +14,7 @@ class ConvoJudge:
         self.srcMessages = []
         self.model = model
         self.temperature = temperature
+        self.oa_wrap = OpenAIWrapper(api_key=os.environ.get("OPENAI_API_KEY"))
 
         def make_header(role_desc):
             return f"""
@@ -81,23 +82,24 @@ behind it in the "rebuttal" field.
 """
 
         self.instructionsForResearch = make_header("researcher") + """
-When presented with a search query, use the web search functionalities
-to search that query, as well as another variant.
+When presented with a search query, generate 3 variations and search
+all of them with the web search tool.
 Be concise, don't worry about niceties.
 Produce output in markdown, with bullet lists as much as possible.
-Always include URLs in your replies.
-To establish the user's details, such us time zone and locale, use the
-functions get_user_info, get_user_local_time, and similar.
+Always include verbatim URLs in your replies.
+Use tools like get_user_info, get_user_local_time to support the context
+of the user's query.
+
+Relevant tags:
+  - <research_context>: The context in which the research is performed.
+  - <research_query>: The original query for the research.
 
 Report essential facts that are relevant to the conversation, e.g.
 if the query is about the weather, do report temperature, and
-any other stats that you acquired in your research. Repying
-with links for the user to do his/her own research should be
-the last resort.
+any other stats that you acquired in your research. Give immedate
+factual information as to minimize the effort of the user.
 When a question has a specific answer, the links are meant as
 a potential form of verification, not as the actual answer.
-Do not waste the parent assistant's and the user's time by
-telling them to follow some links.
 """
 
     def AddMessage(self, srcMsg):
@@ -121,14 +123,15 @@ telling them to follow some links.
             convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
         return convo
 
-    def genCompletion(self, wrap, instructions, convo, tools_user_data=None):
+    def genCompletion(self, instructions, convo, exclude_tools, tools_user_data=None):
         from .OAIUtils import completion_with_tools
         response = completion_with_tools(
-                wrap=wrap,
+                wrap=self.oa_wrap,
                 model=self.model,
                 temperature=self.temperature,
                 instructions=instructions,
                 role_and_content_msgs=[{"role": "user", "content": convo}],
+                exclude_tools=exclude_tools,
                 tools_user_data=tools_user_data,
                 stream=False)
 
@@ -137,8 +140,14 @@ telling them to follow some links.
         #logmsg(f"Full completion response: {response_text}")
         return response_text
 
-    def gen_completion_ret_json(self, wrap, instructions, convo, tools_user_data=None):
-        response = self.genCompletion(wrap, instructions, convo, tools_user_data)
+    def gen_completion_ret_json(
+            self, instructions, convo,
+            exclude_tools, tools_user_data=None):
+        response = self.genCompletion(
+            instructions=instructions,
+            convo=convo,
+            exclude_tools=exclude_tools,
+            tools_user_data=tools_user_data)
         #logmsg(f"Raw completion response: {response}")
 
         # Handle the GPT-3.5 bug for when the response is more than one JSON object
@@ -155,13 +164,13 @@ telling them to follow some links.
         logmsg(f"Final JSON response: {json_response}")
         return json_response
 
-    def GenSummary(self, wrap):
+    def GenSummary(self):
         convo = self.buildConvoString(1000)
-        return self.genCompletion(wrap, self.instructionsForSummary, convo)
+        return self.genCompletion(self.instructionsForSummary, convo, None)
 
-    def GenCritique(self, wrap):
+    def GenCritique(self):
         convo = self.buildConvoString(1000)
-        return self.genCompletion(wrap, self.instructionsForCritique, convo)
+        return self.genCompletion(self.instructionsForCritique, convo, None)
 
     @staticmethod
     def extract_first_json_object(response):
@@ -201,7 +210,7 @@ telling them to follow some links.
             logerr(f"Error parsing JSON: {e}")
             return {}
 
-    def GenFactCheck(self, wrap, tools_user_data):
+    def GenFactCheck(self, tools_user_data):
         n = len(self.srcMessages)
         logmsg(f"GenFactCheck: Total messages: {n}")
         if n == 0:
@@ -218,24 +227,31 @@ telling them to follow some links.
 
         # Only add context section if there are messages before the fact-checking section
         if staIdx < fcStartIdx:
-            convo += "## Begin context for fact-checking. Context-only DO NOT fact-check\n"
+            #convo += "## Begin context for fact-checking. Context-only DO NOT fact-check\n"
+            convo += "<context_for_fact_checking>\n"
             for index in range(staIdx, fcStartIdx):
                 srcMsg = self.srcMessages[index]
                 convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
+            convo += "</context_for_fact_checking>\n"
 
         # Fact-checking section
-        convo += "## Begin statements to fact-check. DO fact-check below\n"
+        #convo += "## Begin statements to fact-check. DO fact-check below\n"
+        convo += "<statements_to_fact_check>\n"
         for index in range(fcStartIdx, n):
             srcMsg = self.srcMessages[index]
             convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
+        convo += "</statements_to_fact_check>\n"
 
         logmsg(f"GenFactCheck: Conversation for fact-checking:\n{convo}")
 
-        return self.gen_completion_ret_json(wrap, self.instructionsForFactCheck, convo, tools_user_data)
+        return self.gen_completion_ret_json(
+            instructions=self.instructionsForFactCheck,
+            convo=convo,
+            exclude_tools=None, # All tools for fact-checking
+            tools_user_data=tools_user_data)
 
-    def gen_research(self, wrap, query, tools_user_data):
+    def gen_research(self, query, tools_user_data):
         """ Generate a research completion
-                :param wrap: OpenAIWrapper object
                 :param query: The query to research
                 :param tools_user_data: The user data to pass to the tools
                 :return: The research completion
@@ -249,16 +265,23 @@ telling them to follow some links.
         staIdx = max(0, n - CONTEXT_MESSAGES)
 
         # Context section
-        convo += "## Begin context for your research. Context-only DO NOT research on this\n"
+        convo += "<research_context>\n"
         for index in range(staIdx, n):
             srcMsg = self.srcMessages[index]
             convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
 
         # Query to research about
-        convo += "## Begin query for research. DO research about this\n"
+        convo += "</research_context>\n"
+        convo += "<research_query>\n"
         convo += f"{query}\n"
+        convo += "</research_query>\n"
 
-        response = self.genCompletion(wrap, self.instructionsForResearch, convo, tools_user_data)
+        exclude_tools = ["ask_research_assistant"]
+        response = self.genCompletion(
+            instructions=self.instructionsForResearch,
+            convo=convo,
+            exclude_tools=exclude_tools,
+            tools_user_data=tools_user_data)
         logmsg(f"Research outcome: {response}")
         return response
 
