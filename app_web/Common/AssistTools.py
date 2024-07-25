@@ -112,6 +112,7 @@ def ddgsTextSearch(query, max_results=None):
     Returns:
         list of dict: A list of search results, each result being a dictionary.
     """
+    logmsg(f"QUERY: {query}")
     max_retries = 2
     for attempt in range(max_retries):
         try:
@@ -134,6 +135,7 @@ def braveTextSearch(query, max_results=None):
     Returns:
         list of dict: A list of search results, each result being a dictionary.
     """
+    logmsg(f"QUERY: {query}")
     brave = Brave()
     try:
         results = brave.search(q=query, count=max_results)
@@ -171,8 +173,6 @@ def perform_web_search(arguments, max_results=10):
     else:
         logerr(f"Invalid arguments for perform_web_search: {arguments}")
         return []
-
-    logmsg(f"Performing web search: {query}")
 
     # If we have a Brave API key, use it. Otherwise, use DuckDuckGo.
     if "BRAVE_API_KEY" in os.environ:

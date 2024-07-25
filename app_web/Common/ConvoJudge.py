@@ -161,7 +161,7 @@ a potential form of verification, not as the actual answer.
 
         # Convert the Python dictionary back to a JSON string if needed
         json_response = json.dumps(fixed_response)
-        logmsg(f"Final JSON response: {json_response}")
+        #logmsg(f"Final JSON response: {json_response}")
         return json_response
 
     def GenSummary(self):
@@ -242,7 +242,7 @@ a potential form of verification, not as the actual answer.
             convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
         convo += "</statements_to_fact_check>\n"
 
-        logmsg(f"GenFactCheck: Conversation for fact-checking:\n{convo}")
+        #logmsg(f"GenFactCheck: Conversation for fact-checking:\n{convo}")
 
         return self.gen_completion_ret_json(
             instructions=self.instructionsForFactCheck,

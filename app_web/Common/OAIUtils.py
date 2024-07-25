@@ -59,7 +59,7 @@ def apply_tools(tool_calls, wrap, tools_user_data) -> list:
     return messages
 
 #==================================================================
-def handle_stream(response, wrap, model, temperature, messages, tools_user_data):
+def handle_stream(response, wrap, messages, tools_user_data):
 
     # A class to store the tool call that can mimic the structure tool_calls in the response
     class ToolCall:
@@ -146,7 +146,7 @@ def handle_stream(response, wrap, model, temperature, messages, tools_user_data)
             full_calls = {}
             already_processed_some_calls = True
 
-            yield response_d.content, True, do_stop
+            yield response_d.content, True, False
         else:
             yield response_d.content, False, do_stop
 
@@ -171,21 +171,36 @@ def completion_with_tools(
     ] + role_and_content_msgs
 
     #=== Handle the non-streaming path (easy)
-    if not stream:
+    def non_stream_path(messages):
         res = wrap.CreateCompletion(model=model, temperature=temperature, messages=messages, tools=tools, stream=False)
         #logmsg(f"Completion Response (NON Stream): {res}")
 
+        # If there are no tool calls, just pass the content of the message
         res_msg = res.choices[0].message
-        if res_msg.tool_calls:
+        if not res_msg.tool_calls:
+            yield res_msg.content
+        else:
+            # Proceed to call the tools
             tools_out = apply_tools(res_msg.tool_calls, wrap, tools_user_data)
             messages.append(res_msg)  # Add the response message to the conversation
             messages += tools_out  # Add the messages from the tools
+            # Call the completion again now that we have the tools output
+            res2 = wrap.CreateCompletion(
+                model=model,
+                temperature=temperature,
+                messages=messages,
+                tools=None,
+                stream=False)
+            # Pass the content of the response
+            yield res2.choices[0].message.content
 
-        res2 = wrap.CreateCompletion(model=model, temperature=temperature, messages=messages, tools=None, stream=False)
-        return res2.choices[0].message.content
+    if not stream:
+        yield from non_stream_path(messages=messages)
+        return
 
     #===
     did_call_tools = False
+    did_generate_after_tools_out = False
     max_loops = 4
 
     for i in range(max_loops):
@@ -199,7 +214,7 @@ def completion_with_tools(
         #logmsg(f"Completion with tools Response: {response}")
 
         content = ""
-        for part, did_call_tools_now, do_stop in handle_stream(response, wrap, model, temperature, messages, tools_user_data):
+        for part, did_call_tools_now, do_stop in handle_stream(response, wrap, messages, tools_user_data):
             if part is not None:
                 if part == '':
                     content += '\n'
@@ -207,8 +222,12 @@ def completion_with_tools(
                     content += part
                 yield part
 
+        did_generate_after_tools_out = (
+            did_generate_after_tools_out or
+                (did_call_tools and not did_call_tools_now))
+
         did_call_tools = did_call_tools or did_call_tools_now
 
-        if do_stop:
+        if do_stop and (did_generate_after_tools_out or not did_call_tools):
             break
 
