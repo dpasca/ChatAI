@@ -1,10 +1,10 @@
 {
-    "app_version": "0.0.30c",
+    "app_version": "0.0.31c",
     "model_version": "gpt-4o",
     "model_temperature": 0.5,
     "support_model_version": "gpt-4o-mini",
     "support_model_temperature": 0.0,
-    "support_enable_factcheck": false,
+    "support_enable_factcheck": true,
     "support_enable_research_assistant": true,
     "enable_web_search": true,
     "enable_rag": false,
