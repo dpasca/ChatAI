@@ -30,6 +30,8 @@ RAG_CHROMA_PERSIST_DIR = "_chroma_db"
 
 RAG_IMMEDIATE_SRC_DIR = "rag_immediate_src"
 
+tool_items_dict = {}
+
 #==================================================================
 # Define the super_get_user_info function
 super_get_user_info: Callable[[Optional[dict]], dict] = lambda arguments=None: None
@@ -43,7 +45,7 @@ async def execute_tool(tool_item, parameters: Dict[str, Any]) -> Any:
     else:
         return tool_item.function(parameters)
 
-async def multi_tool_use_parallel(tool_uses: List[Dict[str, Any]], tool_items_dict: Dict[str, Any]) -> Dict[str, Any]:
+async def multi_tool_use_parallel(tool_uses: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Execute multiple tools in parallel."""
     tasks = []
 
@@ -65,7 +67,7 @@ async def multi_tool_use_parallel(tool_uses: List[Dict[str, Any]], tool_items_di
         for i, result in enumerate(results)
     }
 
-def fallback_tool_function(name: str, arguments: Any, tool_items_dict: Dict[str, Any]) -> Any:
+def fallback_tool_function(name: str, arguments: Any) -> Any:
     logmsg(f"Fallback tool function: {name}({arguments})")
     # NOTE: Sometimes OpenAI exposes a call to multi_tool_use.parallel as a bug
     #  https://community.openai.com/t/model-tries-to-call-unknown-function-multi-tool-use-parallel/490653
@@ -77,7 +79,7 @@ def fallback_tool_function(name: str, arguments: Any, tool_items_dict: Dict[str,
             else:
                 args = arguments
             tool_uses = args.get('tool_uses', [])
-            results = asyncio.run(multi_tool_use_parallel(tool_uses, tool_items_dict))
+            results = asyncio.run(multi_tool_use_parallel(tool_uses))
             return json.dumps(results)
         except Exception as e:
             return json.dumps({"error": f"Failed to execute multi_tool_use.parallel: {str(e)}"})
@@ -249,8 +251,6 @@ tool_items = [
 ]
 
 #==================================================================
-tool_items_dict = {}
-
 def initialize_tools(
         enable_rag=False,
         rag_query_instructions=None,
