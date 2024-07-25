@@ -167,6 +167,7 @@ AssistTools.initialize_tools(
     enable_rag=config.get('enable_rag', False),
     rag_query_instructions=config.get('rag_query_instructions'),
     enable_web_search=config.get('enable_web_search', False),
+    support_enable_research_assistant=config.get('support_enable_research_assistant', True),
     storage=_storage,
     super_get_user_info_=local_get_user_info,
     super_get_main_MsgThread_=local_get_main_MsgThread,
@@ -423,6 +424,7 @@ def stream_openai_response(client_id, ws_session_id):
         temperature=config["model_temperature"],
         instructions=ChatAICore.instrument_instructions(assistant_instructions),
         role_and_content_msgs=mt.make_messages_for_completion(20),
+        exclude_tools=None, # At top level we don't exclude any tools
         tools_user_data=client_id,
         stream=True  # Enable streaming
     )

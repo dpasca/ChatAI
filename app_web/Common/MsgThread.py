@@ -113,7 +113,7 @@ class MsgThread(BaseModel):
             self.judge.AddMessage(msg)
 
     def gen_fact_check(self, tools_user_data=None):
-        return self.judge.GenFactCheck(self.wrap, tools_user_data)
+        return self.judge.GenFactCheck(tools_user_data)
 
     def create_message(self, role, content, src_id=None) -> dict:
         # Wrap content in a list containing one dictionary

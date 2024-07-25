@@ -13,5 +13,5 @@ from pydantic import BaseModel
 class ToolItem(BaseModel):
     name: str
     function: Callable[[dict], Any]
-    requires_assistant: bool = False
+    is_available_to_agents: bool = False
     definition: Dict[str, Any]

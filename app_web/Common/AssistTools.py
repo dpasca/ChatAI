@@ -5,6 +5,7 @@
 # Description: Tools for the assistant (aka function-calling/actions)
 #==================================================================
 
+import asyncio
 import json
 import time
 import pytz
@@ -17,6 +18,7 @@ from brave import Brave
 
 from .logger import *
 from typing import Callable, Optional
+from typing import Dict, Any, List, Callable
 from .MsgThread import MsgThread as MsgThread
 from .ToolItem import ToolItem
 from .RAGSystem import RAGSystem
@@ -32,6 +34,69 @@ RAG_IMMEDIATE_SRC_DIR = "rag_immediate_src"
 # Define the super_get_user_info function
 super_get_user_info: Callable[[Optional[dict]], dict] = lambda arguments=None: None
 super_get_main_MsgThread: Callable[[], MsgThread] = lambda: None
+
+#==================================================================
+async def execute_tool(tool_item, parameters: Dict[str, Any]) -> Any:
+    """Execute a single tool asynchronously."""
+    if asyncio.iscoroutinefunction(tool_item.function):
+        return await tool_item.function(parameters)
+    else:
+        return tool_item.function(parameters)
+
+async def multi_tool_use_parallel(tool_uses: List[Dict[str, Any]], tool_items_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute multiple tools in parallel."""
+    tasks = []
+
+    for tool_use in tool_uses:
+        recipient_name = tool_use.get('recipient_name', '')
+        function_name = recipient_name.split('.')[-1]  # Extract the actual function name
+
+        if function_name in tool_items_dict:
+            tool_item = tool_items_dict[function_name]
+            parameters = tool_use.get('parameters', {})
+            tasks.append(execute_tool(tool_item, parameters))
+        else:
+            tasks.append(asyncio.create_task(asyncio.sleep(0)))  # Dummy task for invalid tools
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    return {
+        f"result_{i}": str(result) if not isinstance(result, Exception) else f"Error: {str(result)}"
+        for i, result in enumerate(results)
+    }
+
+def fallback_tool_function(name: str, arguments: Any, tool_items_dict: Dict[str, Any]) -> Any:
+    logmsg(f"Fallback tool function: {name}({arguments})")
+    # NOTE: Sometimes OpenAI exposes a call to multi_tool_use.parallel as a bug
+    #  https://community.openai.com/t/model-tries-to-call-unknown-function-multi-tool-use-parallel/490653
+    if name in ["multi_tool_use.parallel", "multi_tool_use_parallel"]:
+        logmsg(f"Handling multi_tool_use.parallel")
+        try:
+            if isinstance(arguments, str):
+                args = json.loads(arguments)
+            else:
+                args = arguments
+            tool_uses = args.get('tool_uses', [])
+            results = asyncio.run(multi_tool_use_parallel(tool_uses, tool_items_dict))
+            return json.dumps(results)
+        except Exception as e:
+            return json.dumps({"error": f"Failed to execute multi_tool_use.parallel: {str(e)}"})
+
+    # Existing fallback logic for other unknown functions
+    if isinstance(arguments, dict):
+        query = " ".join(str(value) for value in arguments.values() if not isinstance(value, object))
+        logmsg(f"Query built from dict: {query}")
+    elif isinstance(arguments, str):
+        query = arguments
+        logmsg(f"Query built from string: {query}")
+    else:
+        query = str(arguments)
+        logmsg(f"Query built from object: {query}")
+
+    name_to_human_friendly = name.replace("_", " ")
+    full_query = f"What is {name_to_human_friendly} of {query}"
+    logmsg(f"Full query: {full_query}")
+    return perform_web_search({"query": full_query})
 
 #==================================================================
 def ddgsTextSearch(query, max_results=None):
@@ -70,7 +135,7 @@ def braveTextSearch(query, max_results=None):
     brave = Brave()
     try:
         results = brave.search(q=query, count=max_results)
-        logmsg(f"Raw Brave search results: {results}")
+        #logmsg(f"Raw Brave search results: {results}")
 
         formatted_results = []
         if hasattr(results, 'web') and hasattr(results.web, 'results'):
@@ -84,23 +149,34 @@ def braveTextSearch(query, max_results=None):
                     'thumbnail': result.thumbnail.src if result.thumbnail else ''
                 }
                 formatted_results.append(formatted_result)
-                logmsg(f"Formatted result: {formatted_result}")
+                #logmsg(f"Formatted result: {formatted_result}")
         else:
             logmsg(f"Unexpected results structure: {type(results)}")
 
-        logmsg(f"## Formatted Brave search results: {formatted_results}")
         return formatted_results
     except Exception as e:
         logerr(f"Failed to perform Brave search: {str(e)}")
         return []
 
 # Define your functions
-def perform_web_search(arguments):
+def perform_web_search(arguments, max_results=10):
+    if isinstance(arguments, dict) and "query" in arguments:
+        query = arguments["query"]
+        if "max_results" in arguments:
+            max_results = arguments["max_results"]
+    elif isinstance(arguments, str):
+        query = arguments
+    else:
+        logerr(f"Invalid arguments for perform_web_search: {arguments}")
+        return []
+
+    logmsg(f"Performing web search: {query}")
+
     # If we have a Brave API key, use it. Otherwise, use DuckDuckGo.
     if "BRAVE_API_KEY" in os.environ:
-        return braveTextSearch(arguments["query"], max_results=10)
+        return braveTextSearch(query, max_results=max_results)
     else:
-        return ddgsTextSearch(arguments["query"], max_results=10)
+        return ddgsTextSearch(query, max_results=max_results)
 
 def get_user_info(arguments=None):
     return { "user_info": super_get_user_info(arguments) }
@@ -124,8 +200,8 @@ def get_user_local_time(arguments=None):
 def ask_research_assistant(arguments=None):
 
     # Ensure we have all the necessary args
-    if not (arguments.get("wrap") or
-            arguments.get("query") or
+    #if not (arguments.get("wrap") or
+    if not (arguments.get("query") or
             arguments.get("tools_user_data")):
         logerr("Missing arguments for ask_research_assistant")
         return f"Missing arguments. Got: {arguments}"
@@ -135,18 +211,18 @@ def ask_research_assistant(arguments=None):
     # If there is no main message thread, then perform a simple web search
     if msg_thread is None or msg_thread.judge is None:
         logwarn("No main message thread or judge found. Falling back to web search.")
-        return ddgsTextSearch(arguments["query"], max_results=5)
+        return perform_web_search(arguments["query"], max_results=5)
 
     return msg_thread.judge.gen_research(
-                wrap=arguments["wrap"],
                 query=arguments["query"],
                 tools_user_data=arguments["tools_user_data"])
 
+#==================================================================
 tool_items = [
     ToolItem(
         name="get_user_info",
         function=get_user_info,
-        requires_assistant=False,
+        is_available_to_agents=True,
         definition={
             "name": "get_user_info",
             "description": "Get the user info, such as timezone and user-agent (browser)",
@@ -155,7 +231,7 @@ tool_items = [
     ToolItem(
         name="get_unix_time",
         function=get_unix_time,
-        requires_assistant=False,
+        is_available_to_agents=True,
         definition={
             "name": "get_unix_time",
             "description": "Get the current unix time",
@@ -164,39 +240,13 @@ tool_items = [
     ToolItem(
         name="get_user_local_time",
         function=get_user_local_time,
-        requires_assistant=False,
+        is_available_to_agents=True,
         definition={
             "name": "get_user_local_time",
             "description": "Get the user local time and timezone",
         }
     ),
-    ToolItem(
-        name="ask_research_assistant",
-        function=ask_research_assistant,
-        requires_assistant=True,
-        definition={
-            "name": "ask_research_assistant",
-            "description": "Ask the research assistant for help",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query"
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    )
 ]
-
-def fallback_tool_function(name, arguments):
-    logerr(f"Unknown function {name}. Falling back to web search !")
-    name_to_human_friendly = name.replace("_", " ")
-    query = f"What is {name_to_human_friendly} of " + " ".join(arguments.values())
-    logmsg(f"Submitting made-up query: {query}")
-    return ddgsTextSearch(query, max_results=3)
 
 #==================================================================
 tool_items_dict = {}
@@ -205,6 +255,7 @@ def initialize_tools(
         enable_rag=False,
         rag_query_instructions=None,
         enable_web_search=True,
+        support_enable_research_assistant=True,
         storage=None,
         super_get_user_info_: Callable[[Optional[dict]], dict]=None,
         super_get_main_MsgThread_: Callable[[], MsgThread]=None):
@@ -220,10 +271,34 @@ def initialize_tools(
             ToolItem(
                 name="perform_web_search",
                 function=perform_web_search,
-                requires_assistant=False,
+                is_available_to_agents=True,
                 definition={
                     "name": "perform_web_search",
                     "description": "Perform a web search",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            )
+        )
+
+    if support_enable_research_assistant:
+        logmsg("Adding research assistant tool")
+        tool_items.append(
+            ToolItem(
+                name="ask_research_assistant",
+                function=ask_research_assistant,
+                is_available_to_agents=True,
+                definition={
+                    "name": "ask_research_assistant",
+                    "description": "Perform any kind of research on the Internet and general expert consulting.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -257,3 +332,8 @@ def initialize_tools(
     # Finally initialize the dictionary only with the enabled tools
     global tool_items_dict
     tool_items_dict = {item.name: item for item in tool_items}
+
+    # Print all tool names in the log
+    logmsg("Available tools:")
+    for item in tool_items:
+        logmsg(f"- {item.name} : {item.definition['description']}")

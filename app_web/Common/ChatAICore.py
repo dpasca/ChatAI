@@ -23,6 +23,7 @@ unix_time: 1620000000
 The user does not write this. It's injected by the chat app for the assistant to use.
 Do not make any mention of this metadata. Simply use it organically when needed (e.g.
 when asked about the time, use the unix_time value but do not mention it explicitly).
+`unix_time` is a timestamp in seconds independent of the timezone of the user.
 """
 
 FORMAT_INSTRUCT = r"""

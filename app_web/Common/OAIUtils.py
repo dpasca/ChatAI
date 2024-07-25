@@ -22,12 +22,16 @@ def apply_tools(tool_calls, wrap, tools_user_data) -> list:
             logwarn(f"Tool call with missing name: {call}")
             continue
         name = call.function.name
-        args = json.loads(call.function.arguments) if call.function.arguments else {}
+        try:
+            args = json.loads(call.function.arguments) if call.function.arguments else {}
+        except:
+            logerr(f"Tool call with invalid arguments: {call}")
+            continue
 
         logmsg(f"Tool call: {name}({args})")
 
         # Add wrap and tools_user_data to the arguments
-        args["wrap"] = wrap
+        #args["wrap"] = wrap
         args["tools_user_data"] = tools_user_data
 
         # Look up the function in the dictionary and call it
@@ -55,18 +59,6 @@ def apply_tools(tool_calls, wrap, tools_user_data) -> list:
     return messages
 
 #==================================================================
-def handle_non_stream(response, wrap, model, temperature, messages, tools_user_data):
-    # Handle the non-stream case
-    response_msg = response.choices[0].message
-    if response_msg.tool_calls:
-        tools_out = apply_tools(response_msg.tool_calls, wrap, tools_user_data)
-        messages.append(response_msg)  # Add the response message to the conversation
-        messages += tools_out  # Add the messages from the tools
-        return None, False
-    else:
-        return response_msg.content, True
-
-#==================================================================
 def handle_stream(response, wrap, model, temperature, messages, tools_user_data):
 
     # A class to store the tool call that can mimic the structure tool_calls in the response
@@ -86,12 +78,21 @@ def handle_stream(response, wrap, model, temperature, messages, tools_user_data)
     cur_call_index = None
     accumulating_calls = False
 
+    already_processed_some_calls = False
+
     # Process the stream of responses
     for response_it in response:
         response_d = response_it.choices[0].delta
+        #logmsg(f"** response_it: {response_it}")
+
+        # NOTE: Useful but not sufficient !
+        do_stop = (response_d.content is None and
+                   response_d.tool_calls is None and
+                   response_it.choices[0].finish_reason != "tool_calls")
 
         # Do we have tool calls ?
         if response_d.tool_calls:
+            assert not already_processed_some_calls, "Expecting tool_calls in a single batch"
             # Set in "accumulation" state
             accumulating_calls = True
             # Process the tool-call deltas
@@ -123,9 +124,10 @@ def handle_stream(response, wrap, model, temperature, messages, tools_user_data)
         # If we have a complete set of tool calls, process them
         if full_calls and not accumulating_calls:
             fc_list = list(full_calls.values())
+            # Processing the calls here
             tools_out = apply_tools(fc_list, wrap, tools_user_data)
 
-            # Build the message that details the requested too calls
+            # Build the message that details the requested tool calls
             tc_reqs = []
             for c in fc_list:
                 tc_reqs.append({
@@ -142,12 +144,11 @@ def handle_stream(response, wrap, model, temperature, messages, tools_user_data)
 
             fc_list = []
             full_calls = {}
-            yield None, False
+            already_processed_some_calls = True
+
+            yield response_d.content, True, do_stop
         else:
-            #logmsg(f"response_d: {response_d}")
-            # Done if it has no conent and no tool calls
-            is_done = response_d.content is None and response_d.tool_calls is None
-            yield response_d.content, is_done
+            yield response_d.content, False, do_stop
 
 #==================================================================
 def completion_with_tools(
@@ -156,48 +157,58 @@ def completion_with_tools(
         temperature: float,
         instructions: str,
         role_and_content_msgs: List[Dict[str, str]],
+        exclude_tools=None,
         tools_user_data=None,
         stream=False) -> Iterator[str]:
 
     tools = []
     for item in AssistTools.tool_items:
-        # NOTE: "assistant" here means our agent system (e.g. research asssitant),
-        #  not OpenAI's high level API
-        if not item.requires_assistant:
+        if exclude_tools is None or item.name not in exclude_tools:
             tools.append({"type": "function", "function": item.definition})
 
     messages = [
         {"role": "system", "content": instructions},
     ] + role_and_content_msgs
 
-    while True:
+    #=== Handle the non-streaming path (easy)
+    if not stream:
+        res = wrap.CreateCompletion(model=model, temperature=temperature, messages=messages, tools=tools, stream=False)
+        #logmsg(f"Completion Response (NON Stream): {res}")
+
+        res_msg = res.choices[0].message
+        if res_msg.tool_calls:
+            tools_out = apply_tools(res_msg.tool_calls, wrap, tools_user_data)
+            messages.append(res_msg)  # Add the response message to the conversation
+            messages += tools_out  # Add the messages from the tools
+
+        res2 = wrap.CreateCompletion(model=model, temperature=temperature, messages=messages, tools=None, stream=False)
+        return res2.choices[0].message.content
+
+    #===
+    did_call_tools = False
+    max_loops = 4
+
+    for i in range(max_loops):
         response = wrap.CreateCompletion(
             model=model,
             temperature=temperature,
             messages=messages,
-            tools=tools,
+            tools= tools if not did_call_tools else None,
             stream=stream,
         )
+        #logmsg(f"Completion with tools Response: {response}")
 
-        is_done = False
-        if not stream:
-            content, is_done = handle_non_stream(response, wrap, model, temperature, messages, tools_user_data)
-            if content is not None:
-                yield content
-        else:
-            content = ""
-            for part, is_done in handle_stream(response, wrap, model, temperature, messages, tools_user_data):
-                if part is not None:
-                    if part == '':
-                        content += '\n'
-                    else:
-                        content += part
-                    yield part
+        content = ""
+        for part, did_call_tools_now, do_stop in handle_stream(response, wrap, model, temperature, messages, tools_user_data):
+            if part is not None:
+                if part == '':
+                    content += '\n'
+                else:
+                    content += part
+                yield part
 
-                if is_done:
-                    break
+        did_call_tools = did_call_tools or did_call_tools_now
 
-        #logmsg(f"Content: {content}")
-        if is_done:
+        if do_stop:
             break
 
