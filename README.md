@@ -39,21 +39,19 @@ Fact-checking in web app runs in background, it takes some time to complete, but
 The web app requires the following environment variables.
 Set them in the `.env` file for local development and in the app settings for production:
 
-- `OPENAI_API_KEY` is the API key for OpenAI (get it from the OpenAI dashboard)
-- `CHATAI_FLASK_SECRET_KEY` a random string used by Flask to encrypt cookies
-  - e.g. `python -c "import os; print(os.urandom(24).hex())"`
-- `BRAVE_API_KEY` is the API key for Brave (https://brave.com/search/api/)
-  - If there is no Brave API key, the search will default to DuckDuckGo (unreliable)
-- `DO_SPACES_ACCESS_KEY` is the access key for DigitalOcean Spaces
-- `DO_SPACES_SECRET_KEY` is the secret key for DigitalOcean Spaces
-- `DO_STORAGE_CONTAINER` is the name of the container in DigitalOcean Spaces
-  - e.g. `myai_spaces`
-- `DO_STORAGE_SERVER` is the URL of the DigitalOcean Spaces server
-  - e.g. `https://myai.sfo.digitaloceanspaces.com`
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `OPENAI_API_KEY` | The API key for OpenAI (get it from the OpenAI dashboard) | Yes |
+| `CHATAI_FLASK_SECRET_KEY` | A random string used by Flask to encrypt cookies<br>e.g. `python -c "import os; print(os.urandom(24).hex())"` | Yes |
+| `BRAVE_API_KEY` | The API key for Brave (https://brave.com/search/api/)<br>If there is no Brave API key, the search will default to DuckDuckGo (unreliable) | Optional |
+| `DO_SPACES_ACCESS_KEY` | The access key for DigitalOcean Spaces | Optional |
+| `DO_SPACES_SECRET_KEY` | The secret key for DigitalOcean Spaces | Optional |
+| `DO_STORAGE_CONTAINER` | The name of the container in DigitalOcean Spaces<br>e.g. `myai_spaces` | Optional |
+| `DO_STORAGE_SERVER` | The URL of the DigitalOcean Spaces server<br>e.g. `https://myai.sfo.digitaloceanspaces.com` | Optional |
 
-See below on how to set the Digital Ocean *storage* variables.
+See below on how to set the Digital Ocean *storage* variables (optional).
 
-### Spaces and containers
+### Spaces and containers (optional)
 
 Create a DigitalOcean Space and a container for the app.
 
@@ -109,7 +107,7 @@ The app will be available globally at `https://yourappname.ondigitalocean.app`.
 
 ## Knowledge files
 
-This app implements a RAG system. See the directory `knowledge` for scripts
+This app implements a RAG system via [LLamaIndex](https://www.llamaindex.ai/). See the directory `knowledge` for scripts
 on how to build this.
 
 ### Optimization
