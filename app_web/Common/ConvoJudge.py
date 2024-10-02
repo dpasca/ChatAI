@@ -96,7 +96,7 @@ Relevant tags:
 
 Report essential facts that are relevant to the conversation, e.g.
 if the query is about the weather, do report temperature, and
-any other stats that you acquired in your research. Give immedate
+any other stats that you acquired in your research. Give immediate
 factual information as to minimize the effort of the user.
 When a question has a specific answer, the links are meant as
 a potential form of verification, not as the actual answer.
