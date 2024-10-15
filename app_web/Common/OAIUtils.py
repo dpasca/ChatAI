@@ -249,7 +249,8 @@ def completion_with_tools(
             model=model,
             temperature=temperature,
             messages=messages,
-            tools= tools if not did_call_tools else None,
+            #tools= tools if not did_call_tools else None,
+            tools=tools,
             stream=stream,
         )
         #logmsg(f"Completion with tools Response: {response}")
