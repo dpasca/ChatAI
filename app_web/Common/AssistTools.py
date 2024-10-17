@@ -176,9 +176,12 @@ def perform_web_search(arguments, max_results=10):
 
     # If we have a Brave API key, use it. Otherwise, use DuckDuckGo.
     if "BRAVE_API_KEY" in os.environ:
-        return braveTextSearch(query, max_results=max_results)
-    else:
-        return ddgsTextSearch(query, max_results=max_results)
+        try:
+            return braveTextSearch(query, max_results=max_results)
+        except Exception as e:
+            logwarn(f"Brave search failed, falling back to DuckDuckGo: {str(e)}")
+
+    return ddgsTextSearch(query, max_results=max_results)
 
 """
 def get_user_info(arguments=None):
@@ -287,7 +290,7 @@ def initialize_tools(
                         "properties": {
                             "query": {
                                 "type": "string",
-                                "description": "The search query"
+                                "description": "The search query. Use language best suited for the research."
                             }
                         },
                         "required": ["query"]
@@ -311,7 +314,7 @@ def initialize_tools(
                         "properties": {
                             "query": {
                                 "type": "string",
-                                "description": "The search query"
+                                "description": "The search query. Use language best suited for the research."
                             }
                         },
                         "required": ["query"]
