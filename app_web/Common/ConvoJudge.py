@@ -84,6 +84,9 @@ behind it in the "rebuttal" field.
         self.instructionsForResearch = make_header("researcher") + """
 When presented with a search query, generate 3 variations and search
 all of them with the web search tool.
+One of the variations should be always in the language relative to the topic.
+For example, if the topic is about the weather in Paris, you must perform at
+least one search in French.
 Be concise, don't worry about niceties.
 Produce output in markdown, with bullet lists as much as possible.
 Always include verbatim URLs in your replies.
@@ -277,6 +280,7 @@ a potential form of verification, not as the actual answer.
         convo += "</research_query>\n"
 
         exclude_tools = ["ask_research_assistant"]
+        logmsg(f"Conversation for research:\n{convo}")
         response = self.genCompletion(
             instructions=self.instructionsForResearch,
             convo=convo,
