@@ -42,8 +42,15 @@ class MsgThread(BaseModel):
             'messages': serializable_messages})
 
     @staticmethod
-    def instrument_user_message(msg_text):
-        return f"<{META_TAG}>\nunix_time: {int(time.time())}\n</{META_TAG}>\n{msg_text}"
+    def instrument_user_message(msg_text, msg_metadata):
+        head = f"<{META_TAG}>\n" # Opening tag
+
+        # Add metadata to the message as key-value pairs
+        for k, v in msg_metadata.items():
+            head += f"{k}: {v}\n"
+
+        head += f"</{META_TAG}>\n" # Closing tag
+        return head + msg_text
 
     @staticmethod
     def deinstrument_user_message(msg_with_meta):
@@ -118,6 +125,7 @@ class MsgThread(BaseModel):
     def create_message(self, role, content, src_id=None) -> dict:
         # Wrap content in a list containing one dictionary
         message = {
+            # Generate a unique src_id if not provided by the caller
             "src_id": src_id if src_id is not None else f"msg_{uuid.uuid4()}",
             "created_at": time.time(),
             "role": role,
@@ -136,8 +144,11 @@ class MsgThread(BaseModel):
         logerr(f"Message with src_id {src_id} not found. Ignoring update.")
         return None
 
-    def create_user_message(self, content, src_id) -> dict:
-        return self.create_message("user", MsgThread.instrument_user_message(content), src_id)
+    def create_user_message(self, content, src_id, msg_metadata) -> dict:
+        return self.create_message(
+            "user",
+            MsgThread.instrument_user_message(content, msg_metadata),
+            src_id)
 
     def create_assistant_message(self, content) -> dict:
         return self.create_message("assistant", content)
