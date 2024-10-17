@@ -461,6 +461,26 @@ def stream_openai_response(client_id, ws_session_id):
         client_set_key(client_id, 'generate_fchecks', True)
         logmsg(f"Set generate_fchecks to True for client {client_id}")
 
+#==================================================================
+import pytz
+from datetime import datetime
+
+def make_user_metadata_dict(client_id):
+    # Create a dictionary with the current Unix timestamp
+    msg_metadata = {'unix_time': int(time.time())}
+
+    if uinfo := client_get_user_info(client_id):
+        logmsg(f"User info: {uinfo}")
+        # Add the existing user info as-is
+        msg_metadata.update(uinfo)
+        # Add the local time as a string like 2024-10-17T16:27:28.924857+09:00
+        tz_timezone = pytz.timezone(uinfo['timezone'])
+        loc_time = datetime.now(tz_timezone)
+        msg_metadata['user_local_time'] = loc_time.isoformat()
+
+    return msg_metadata
+
+#==================================================================
 @socketio.on('send_message')
 def handle_send_message(json, methods=['GET', 'POST']):
 
@@ -481,13 +501,16 @@ def handle_send_message(json, methods=['GET', 'POST']):
             return  # Exit if there's no usable message thread
 
         # Create a dictionary with the current Unix timestamp
-        msg_metadata = {'unix_time': int(time.time())}
+        msg_metadata = make_user_metadata_dict(client_id)
+        logmsg(f"Message metadata: {msg_metadata}")
 
         # Create the user message (will be used as context for the completion)
         user_msg = client_get_msg_thread(client_id).create_user_message(
             content=msg_text,
             src_id=client_src_id,
             msg_metadata=msg_metadata)
+
+        logmsg(f"User message: {user_msg}")
 
         # Call this new streaming function instead of appending replies directly
         threading.Thread(
