@@ -180,6 +180,7 @@ def perform_web_search(arguments, max_results=10):
     else:
         return ddgsTextSearch(query, max_results=max_results)
 
+"""
 def get_user_info(arguments=None):
     return { "user_info": super_get_user_info(arguments) }
 
@@ -198,6 +199,7 @@ def get_user_local_time(arguments=None):
     return {
         "user_local_time": json.dumps(user_time, default=str),
         "user_timezone": timezone }
+"""
 
 def ask_research_assistant(arguments=None):
 
@@ -220,6 +222,10 @@ def ask_research_assistant(arguments=None):
                 tools_user_data=arguments["tools_user_data"])
 
 #==================================================================
+tool_items: List[ToolItem] = []
+# These info are now provided as metadata in user messages
+# No need to have function calls about them
+"""
 tool_items = [
     ToolItem(
         name="get_user_info",
@@ -249,6 +255,7 @@ tool_items = [
         }
     ),
 ]
+"""
 
 #==================================================================
 def initialize_tools(
