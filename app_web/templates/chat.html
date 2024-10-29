@@ -301,6 +301,12 @@
           errorStatusMessage.style.display = 'block';
       }
 
+      // Add this new function
+      function hideErrorMessage() {
+          var errorStatusMessage = document.getElementById('error-status-message');
+          errorStatusMessage.style.display = 'none';
+      }
+
       var socket;
 
       function setupSocketEventListeners()
@@ -322,12 +328,12 @@
         socket.on('connect', function() {
           console.log('Socket connected. socket.id:', socket.id);
           socket.emit('connect_ack');
+          hideErrorMessage(); // Hide error message when connection is restored
         });
 
         socket.on('connected', function(data) {
           console.log("Received custom 'connected' message.",
-            " custom_client_id:", data.custom_client_id,
-            " ws_session_id:", data.ws_session_id);
+            " custom_client_id:", data.custom_client_id);
           if (getCookie('CustomClientId') !== data.custom_client_id) {
               console.error('CustomClientId cookie does not match the one received from the server.');
           }
@@ -351,6 +357,7 @@
         });
         socket.on('reconnect', (attemptNumber) => {
           console.log('WebSocket reconnected. Attempt number:', attemptNumber);
+          hideErrorMessage(); // Hide error message when reconnected
         });
         socket.on('reconnect_attempt', () => {
           console.log('Attempting to reconnect...');
@@ -360,6 +367,11 @@
         });
         socket.on('reconnect_failed', () => {
           console.error('WebSocket reconnection failed.');
+        });
+
+        socket.on('disconnect', function() {
+            console.warn('Socket disconnected.');
+            showErrorMessage('Connection lost. Trying to reconnect...');
         });
 
         // Object to hold ongoing streams of messages
@@ -384,8 +396,6 @@
                 delete currentData[data.src_id];
             }
 
-            //console.log('Received message data:', data);
-
             // Handle error case
             if (data.isError) {
                 onStreamEnd();
@@ -398,7 +408,7 @@
                 pollForAddendums(); // Start polling for addendums
             } else {
                 // Accumulate received message part
-                if (!currentData[data.src_id]) {
+                if (!currentData[data.src_id] || data.is_full_msg) {
                     currentData[data.src_id] = { content: [] };
                 }
                 currentData[data.src_id].content.push(data.text);

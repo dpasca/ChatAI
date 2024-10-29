@@ -154,7 +154,7 @@ function setupFactCheckEventDelegation() {
     chatBox.addEventListener('click', function(e) {
         // Check if the click is on a fact-check icon or its container
         var target = e.target;
-        var isFactCheckIcon = target.classList.contains('fact-check-icon') || 
+        var isFactCheckIcon = target.classList.contains('fact-check-icon') ||
                               target.parentElement.classList.contains('fact-check-collapsed');
 
         if (isFactCheckIcon) {
@@ -333,17 +333,17 @@ function pollForAddendums() {
     .then(handleError)
     .then(data => {
         //console.log("Found addendums:", data.addendums);
-        console.log("Received addendums data:", data);
+        //console.log("Received addendums data:", data);
         for (let addendum of data.addendums) {
             // Check if the addendim has fact-check array
             if (addendum.hasOwnProperty('fact_checks') && addendum.fact_checks.length > 0) {
-                console.log("Processing fact-checks:", addendum.fact_checks);
+                //console.log("Processing fact-checks:", addendum.fact_checks);
                 for (let fcheck of addendum.fact_checks) {
                     appendFactCheck(fcheck);
                 }
             }
             else {
-                console.log("No fact-checks found in addendum");
+                //console.log("No fact-checks found in addendum");
             }
         }
         // See if we have a 'message'
@@ -351,10 +351,10 @@ function pollForAddendums() {
         //    console.log("Found message:", data.message);
         //}
         if (!data.final) {
-            console.log("Scheduling next addendum poll");
+            //console.log("Scheduling next addendum poll");
             setTimeout(pollForAddendums, 1000); // Poll at a fixed interval
         } else {
-            console.log("Addendum polling complete");
+            //console.log("Addendum polling complete");
         }
     })
     .catch(error => {

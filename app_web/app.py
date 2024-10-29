@@ -57,6 +57,7 @@ class AppClient:
         self._user_info = dict()
         self._msg_thread = None
         self._misc_dict = dict()
+        self._connected = False
 
     @property
     def user_info(self):
@@ -75,6 +76,15 @@ class AppClient:
     def msg_thread(self, new_thread):
         with self.lock:
             self._msg_thread = new_thread
+
+    @property
+    def connected(self):
+        with self.lock:
+            return self._connected
+    @connected.setter
+    def connected(self, new_value):
+        with self.lock:
+            self._connected = new_value
 
     def consume_key(self, key):
         with self.lock:
@@ -273,6 +283,10 @@ def reset_expired_chat():
     return redirect(url_for('index'))
 
 #===============================================================================
+def make_client_room(client_id):
+    return f'client_{client_id}'
+
+#===============================================================================
 def make_file_url(file_id, simple_name):
     strippable_prefix = "file-"
     new_name = file_id
@@ -359,22 +373,30 @@ def get_history():
 #===============================================================================
 @socketio.on('connect')
 def handle_connect():
-    ws_session_id = request.sid  # request.sid for WebSocket session management
-    client_id = request.args.get('CustomClientId')  # Retrieved from the connection query
-    join_room(ws_session_id)
-    logmsg(f"Client connected. WebSocket Session ID: {ws_session_id}, Custom Client ID: {client_id}")
+    client_id = request.args.get('CustomClientId')
+    get_app_client(client_id).connected = True
+    client_room = make_client_room(client_id)
+    join_room(client_room)
+    logmsg(f"Client connected. Req.Session ID: {request.sid}, Custom Client ID: {client_id}, joined room: {client_room}")
 
 @socketio.on('connect_ack')
 def handle_connect_ack():
-    ws_session_id = request.sid  # request.sid for WebSocket session management
     client_id = request.args.get('CustomClientId')  # Retrieved from the connection query
-    logmsg(f"Responding to connect_ack. WebSocket Session ID: {ws_session_id}, Custom Client ID: {client_id}")
-    emit('connected', {'ws_session_id': ws_session_id, 'custom_client_id': client_id})
+    get_app_client(client_id).connected = True
+    logmsg(f"Responding to connect_ack. Req.Session ID: {request.sid}, Custom Client ID: {client_id}")
+    emit('connected', {'custom_client_id': client_id})
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    # Handle client disconnecting, if necessary
+    client_id = request.args.get('CustomClientId')
+    get_app_client(client_id).connected = False
     logmsg(f"Client disconnected. Session ID: {request.sid}")
+
+@socketio.on('reconnect')
+def handle_reconnect():
+    client_id = request.args.get('CustomClientId')
+    get_app_client(client_id).connected = True
+    logmsg(f"Client reconnected. Session ID: {request.sid}")
 
 #===============================================================================
 @app.route('/get_addendums', methods=['GET'])
@@ -414,7 +436,7 @@ def get_addendums():
     return jsonify({'addendums': [fc], 'final': True}), 200
 
 #===============================================================================
-def stream_openai_response(client_id, ws_session_id):
+def stream_openai_response(client_id):
 
     mt = client_get_msg_thread(client_id)
 
@@ -433,29 +455,47 @@ def stream_openai_response(client_id, ws_session_id):
     assist_msg = mt.create_assistant_message("")
     src_id = assist_msg['src_id']
 
-    socketio.emit('stream', {'src_id': src_id, 'text': '$DUMMY_TOKEN$'}, room=ws_session_id)
+    client_room = make_client_room(client_id)
+    logmsg(f"Streaming to room {client_room}")
+
+    socketio.emit('stream', {'src_id': src_id, 'text': '$DUMMY_TOKEN$'}, room=client_room)
 
     # Send the response in parts and collect the full text
     reply_text = ""
+    def send_full_reply():
+        socketio.emit('stream', {'src_id': src_id, 'text': reply_text, 'is_full_msg': True}, room=client_room)
+
+    part_cnt = 0
     for part in response:
         if part is None:
             #print("$END_TOKEN$")
             continue
         reply_text += part
         #print(part, end="")
+        
+        # Resend the full text for the first few parts
+        # This is a HACK for the issue of the first part getting an error
+        part_cnt += 1
+        if part_cnt <= 10:
+            send_full_reply()
+            continue
+
         try:
-            socketio.emit('stream', {'src_id': src_id, 'text': part}, room=ws_session_id)
+            socketio.emit('stream', {'src_id': src_id, 'text': part}, room=client_room)
         except Exception as e:
-            logerr(f"Error sending message to session {ws_session_id}: {e}")
+            logerr(f"Error sending message to session {client_room}: {e}")
             break
 
     mt.update_message(src_id, reply_text)
 
+    # HACK: Set the full reply at the end once again
+    send_full_reply()
+
     # End the stream with a special signal, e.g., '$END_TOKEN$'
     try:
-        socketio.emit('stream', {'src_id': src_id, 'text': '$END_TOKEN$'}, room=ws_session_id)
+        socketio.emit('stream', {'src_id': src_id, 'text': '$END_TOKEN$'}, room=client_room)
     except Exception as e:
-        logerr(f"Error sending $END_TOKEN$ message to session {ws_session_id}: {e}")
+        logerr(f"Error sending $END_TOKEN$ message to session {client_room}: {e}")
 
     if config['support_enable_factcheck']:
         client_set_key(client_id, 'generate_fchecks', True)
@@ -484,9 +524,13 @@ def make_user_metadata_dict(client_id):
 @socketio.on('send_message')
 def handle_send_message(json, methods=['GET', 'POST']):
 
-    ws_session_id = request.sid  # Get the session ID from the WebSocket connection
-
     client_id = request.args.get('CustomClientId')
+
+    client_room = make_client_room(client_id)
+
+    if not get_app_client(client_id).connected:
+        logerr(f"Client {client_id} is not connected.")
+        #socketio.emit('reconnect_request', room=client_room)
 
     # Text of the message from the client
     msg_text = json['message']
@@ -497,10 +541,10 @@ def handle_send_message(json, methods=['GET', 'POST']):
     try:
         # Ensure there's an active message thread
         if not client_has_msg_thread(client_id):
-            emit('stream', {'text': 'No message thread loaded, please reload the page.', 'isError': True}, room=ws_session_id)
+            emit('stream', {'text': 'No message thread loaded, please reload the page.', 'isError': True}, room=client_room)
             return  # Exit if there's no usable message thread
 
-        # Create a dictionary with the current Unix timestamp
+        # Create a dictionary with the user metadata
         msg_metadata = make_user_metadata_dict(client_id)
         logmsg(f"Message metadata: {msg_metadata}")
 
@@ -515,7 +559,7 @@ def handle_send_message(json, methods=['GET', 'POST']):
         # Call this new streaming function instead of appending replies directly
         threading.Thread(
             target=stream_openai_response,
-            args=(client_id, ws_session_id)
+            args=(client_id,) # NOTE: needs the comma to make it a tuple
             ).start()
 
         # Respond with a "processing" status and with the user message ID
@@ -524,7 +568,7 @@ def handle_send_message(json, methods=['GET', 'POST']):
                         'user_msg_id': user_msg['src_id']})
     except Exception as e:
         logerr(f"KeyError: {str(e)}")
-        emit('stream', {'text': 'The session has been disconnected. Please reload the page.', 'isError': True}, room=ws_session_id)
+        emit('stream', {'text': 'The session has been disconnected. Please reload the page.', 'isError': True}, room=client_room)
         return jsonify({'status': 'error', 'message': 'Session disconnected'})
 
 if __name__ == '__main__':
