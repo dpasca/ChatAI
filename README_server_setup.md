@@ -40,10 +40,22 @@ ExecStart=/home/flask/<app_name>/venv/bin/gunicorn --workers 1 --worker-class ge
 ```
 > NOTE: because we are using `gevent`, it's suggested to use only 1 worker.
 
-If you wish to keep an error log, change as follows:
+If you wish to keep an error log and access log, change as follows:
 ```bash
-ExecStart=/home/flask/<app_name>/venv/bin/gunicorn --workers 1 --worker-class gevent --bind unix:/home/flask/gunicorn.socket --chdir /home/flask/<app_name>/app_web app:app --error-logfile /var/log/gunicorn/error.log
+ExecStart=/home/flask/<app_name>/venv/bin/gunicorn --workers 1 --worker-class gevent --bind unix:/home/flask/gunicorn.socket --chdir /home/flask/<app_name>/app_web app:app --access-logfile /var/log/gunicorn/access.log --error-logfile /var/log/gunicorn/error.log
 ```
+
+Create the log files:
+```bash
+sudo touch /var/log/gunicorn/access.log
+sudo chown flask:flask /var/log/gunicorn/access.log
+sudo chmod 644 /var/log/gunicorn/access.log
+
+sudo touch /var/log/gunicorn/error.log
+sudo chown flask:flask /var/log/gunicorn/error.log
+sudo chmod 644 /var/log/gunicorn/error.log
+```
+
 
 For a more detailed log, add the following to the `[Service]` section:
 ```bash
