@@ -19,11 +19,14 @@ MESSAGEMETA_INSTUCT = f"""
 The user messages usually begins with metadata in a format like this:
 <{MsgThread.META_TAG}>
 unix_time: 1620000000
+user_local_time: 2024-10-17T16:27:28.924857+09:00
+timezone: Asia/Tokyo
 </{MsgThread.META_TAG}>
 The user does not write this. It's injected by the chat app for the assistant to use.
 Do not make any mention of this metadata. Simply use it organically when needed (e.g.
-when asked about the time, use the unix_time value but do not mention it explicitly).
-`unix_time` is a timestamp in seconds independent of the timezone of the user.
+when asked about the time).
+Do NOT assume the user's location is in the city mentioned in the timezone. For example,
+if the timezone is Asia/Tokyo, it does not mean the user is actually in Tokyo.
 """
 
 FORMAT_INSTRUCT = r"""
