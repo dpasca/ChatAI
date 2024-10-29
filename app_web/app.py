@@ -28,6 +28,7 @@ from Common import AssistTools
 
 USER_BUCKET_PATH = "user_a_00001"
 ENABLE_SLEEP_LOGGING = False
+DO_REMOVE_USER_AGENT = True
 
 #===============================================================================
 # Load the environment variables, override the existing ones
@@ -511,8 +512,14 @@ def make_user_metadata_dict(client_id):
 
     if uinfo := client_get_user_info(client_id):
         logmsg(f"User info: {uinfo}")
+
         # Add the existing user info as-is
         msg_metadata.update(uinfo)
+
+        # Remove user_agent if requested
+        if DO_REMOVE_USER_AGENT and 'user_agent' in uinfo:
+            msg_metadata.pop('user_agent', None)
+
         # Add the local time as a string like 2024-10-17T16:27:28.924857+09:00
         tz_timezone = pytz.timezone(uinfo['timezone'])
         loc_time = datetime.now(tz_timezone)
