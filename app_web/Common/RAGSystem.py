@@ -81,7 +81,7 @@ class RAGSystem:
         index = load_index_from_storage(storage_context)
         self.indices.append(index)
         self.retrievers.append(index.as_retriever(similarity_top_k=3))
-        doc_count = len(index.docstore.docs)
+        doc_count = chroma_collection.count()
         logmsg(f"Found {doc_count} documents in the index")
 
     def add_immediate_storage(self, docs_dir):

@@ -280,7 +280,7 @@ a potential form of verification, not as the actual answer.
         convo += "</research_query>\n"
 
         exclude_tools = ["ask_research_assistant"]
-        logmsg(f"Conversation for research:\n{convo}")
+        #logmsg(f"Conversation for research:\n{convo}")
         response = self.genCompletion(
             instructions=self.instructionsForResearch,
             convo=convo,
