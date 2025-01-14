@@ -149,14 +149,16 @@ async def handle_stream(response, wrap, messages, tools_user_data):
     cur_call_index = None
     accumulating_calls = False
     already_processed_some_calls = False
+    current_content = ""
 
     # Process the stream of responses
     async for response_it in response:
         response_d = response_it.choices[0].delta
+        finish_reason = response_it.choices[0].finish_reason
 
         do_stop = (response_d.content is None and
-                   response_d.tool_calls is None and
-                   response_it.choices[0].finish_reason != "tool_calls")
+                  response_d.tool_calls is None and
+                  finish_reason != "tool_calls")
 
         # Do we have tool calls ?
         if response_d.tool_calls:
@@ -206,19 +208,28 @@ async def handle_stream(response, wrap, messages, tools_user_data):
                     },
                     "type": "function",
                 })
-            messages.append({"role": "assistant", "tool_calls": tc_reqs})
+            messages.append({"role": "assistant", "content": current_content, "tool_calls": tc_reqs})
             # Add the tools output right below the request message
-            messages += tools_out
+            messages.extend(tools_out)
 
             fc_list = []
             full_calls = {}
             already_processed_some_calls = True
+            current_content = ""
 
             if response_d.content:
                 yield response_d.content, True, False
+            else:
+                yield "", True, False  # Signal tool calls even without content
         else:
             if response_d.content:
+                current_content += response_d.content
                 yield response_d.content, False, do_stop
+
+        if do_stop:
+            if current_content and not already_processed_some_calls:
+                messages.append({"role": "assistant", "content": current_content})
+            yield "", False, True
 
 #==================================================================
 async def completion_with_tools_async(
@@ -336,16 +347,21 @@ async def completion_with_tools_async(
 
         if tools_called:
             did_call_tools = True
+            logmsg("[completion_with_tools_async] Making final completion after tool calls")
             # Make one more call without tools to get the final response
             final_response = await wrap.CreateCompletionAsync(
                 model=model,
                 temperature=temperature,
                 messages=messages,
-                stream=True
+                stream=True,
+                tools=None  # Explicitly set tools to None for final response
             )
             async for final_part, _, final_stop in handle_stream(final_response, wrap, messages, tools_user_data):
                 if final_part:
+                    logmsg(f"[completion_with_tools_async] Final response part: {final_part[:100]}...")
                     yield final_part
+                if final_stop:
+                    break
             break
 
         if stream_do_stop and not did_call_tools:
