@@ -136,11 +136,11 @@ a potential form of verification, not as the actual answer.
                 role_and_content_msgs=[{"role": "user", "content": convo}],
                 exclude_tools=exclude_tools,
                 tools_user_data=tools_user_data,
-                stream=False)
+                stream=False)  # Always false for tool-related completions
 
-        # Consume the generator to get the actual response
-        response_text = "".join(response)
-        #logmsg(f"Full completion response: {response_text}")
+        # For non-streaming, we expect a single response
+        response_text = next(response)
+        logmsg(f"Full response (len={len(response_text)}): {response_text}")
         return response_text
 
     def gen_completion_ret_json(
@@ -151,20 +151,32 @@ a potential form of verification, not as the actual answer.
             convo=convo,
             exclude_tools=exclude_tools,
             tools_user_data=tools_user_data)
-        #logmsg(f"Raw completion response: {response}")
+        logmsg(f"Raw completion response (len={len(response)}): {response}")
+
+        # First try to parse the entire response as JSON
+        try:
+            # Remove any leading/trailing whitespace
+            response = response.strip()
+            logmsg(f"Attempting to parse as JSON (stripped): {response}")
+            json_obj = json.loads(response)
+            logmsg("Successfully parsed entire response as JSON")
+            return json.dumps(json_obj)
+        except json.JSONDecodeError as e:
+            logmsg(f"Failed to parse entire response as JSON: {str(e)}")
 
         # Handle the GPT-3.5 bug for when the response is more than one JSON object
         fixed_response = ConvoJudge.extract_first_json_object(response)
-        #logmsg(f"Extracted JSON object: {fixed_response}")
+        logmsg(f"Extracted JSON object: {fixed_response}")
 
         # Check if the fixed_response is empty
         if not fixed_response:
-            logwarn("Could  not extract JSON object from response: {response}")
+            logwarn(f"Could not extract JSON object from response (len={len(response)})")
+            logwarn(f"Response content: {response}")
             return "{}"
 
         # Convert the Python dictionary back to a JSON string if needed
         json_response = json.dumps(fixed_response)
-        #logmsg(f"Final JSON response: {json_response}")
+        logmsg(f"Final JSON response (len={len(json_response)}): {json_response}")
         return json_response
 
     def GenSummary(self):
@@ -184,6 +196,9 @@ a potential form of verification, not as the actual answer.
             in_string = False
             escape = False
 
+            # Log the first few characters to help debug
+            logmsg(f"First 50 chars of response: {response[:50]}")
+
             for i, char in enumerate(response):
                 if char == '"' and not escape:
                     in_string = not in_string
@@ -193,24 +208,27 @@ a potential form of verification, not as the actual answer.
                 elif char == '{' and not in_string:
                     if open_brackets == 0:
                         json_start = i
+                        logmsg(f"Found JSON start at position {i}")
                     open_brackets += 1
                 elif char == '}' and not in_string:
                     open_brackets -= 1
                     if open_brackets == 0:
                         json_end = i + 1
+                        logmsg(f"Found JSON end at position {i}")
                         break
                 if escape:
                     escape = False
 
             if json_start < json_end:
                 json_str = response[json_start:json_end]
-                #logmsg(f"Extracted JSON string: {json_str}")
+                logmsg(f"Extracted JSON string (len={len(json_str)}): {json_str}")
                 return json.loads(json_str)
             else:
-                logwarn(f"No valid JSON object found in the response: {response}")
+                logwarn(f"No valid JSON object found in response (len={len(response)})")
+                logwarn(f"Response content: {response}")
                 return {}
         except Exception as e:
-            logerr(f"Error parsing JSON: {e}")
+            logerr(f"Error parsing JSON: {str(e)}")
             return {}
 
     def GenFactCheck(self, tools_user_data):

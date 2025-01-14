@@ -12,8 +12,9 @@ import asyncio
 import threading
 from .OpenAIWrapper import OpenAIWrapper
 from . import AssistTools
-from typing import List, Dict, Iterator, AsyncGenerator, Optional
+from typing import List, Dict, Union, Any, AsyncGenerator, Iterator
 import queue
+from openai.types.chat import ChatCompletion
 
 # Thread-local storage for event loops
 thread_local = threading.local()
@@ -230,21 +231,12 @@ async def completion_with_tools_async(
         tools_user_data=None,
         stream=False) -> AsyncGenerator[str, None]:
 
-    logmsg(f"[completion_with_tools_async] Starting with stream={stream}")
-    tools = []
-    for item in AssistTools.tool_items:
-        if exclude_tools is None or item.name not in exclude_tools:
-            tools.append({"type": "function", "function": item.definition})
-
-    messages = [
-        {"role": "system", "content": instructions},
-    ] + role_and_content_msgs
+    # Get available tools
+    tools = get_tools(exclude_tools)
+    messages = prepare_messages(instructions, role_and_content_msgs)
 
     if not stream:
         logmsg("[completion_with_tools_async] Non-streaming path")
-        from openai.types.chat import ChatCompletion
-        from typing import Union, Dict, Any
-
         response: Union[ChatCompletion, AsyncGenerator[Dict[str, Any], None]] = await wrap.CreateCompletionAsync(
             model=model,
             temperature=temperature,
@@ -258,7 +250,22 @@ async def completion_with_tools_async(
         message = response.choices[0].message
         if not hasattr(message, 'tool_calls') or not message.tool_calls:
             logmsg("[completion_with_tools_async] No tool calls, yielding message content")
-            yield message.content or ""
+            content = message.content or ""
+            if instructions and "Reply UNIQUELY with a pure raw JSON string" in instructions:
+                try:
+                    # Try to parse as JSON to validate
+                    json.loads(content)
+                    yield content
+                except json.JSONDecodeError:
+                    # If not valid JSON, try to extract the first JSON object
+                    from .ConvoJudge import ConvoJudge
+                    fixed_response = ConvoJudge.extract_first_json_object(content)
+                    if fixed_response:
+                        yield json.dumps(fixed_response)
+                    else:
+                        yield "{}"
+            else:
+                yield content
             return
 
         logmsg("[completion_with_tools_async] Processing tool calls")
@@ -287,7 +294,23 @@ async def completion_with_tools_async(
         if isinstance(response2, AsyncGenerator):
             raise ValueError("Expected ChatCompletion but got AsyncGenerator")
 
-        yield response2.choices[0].message.content or ""
+        # For fact-checking, we need to ensure we get a valid JSON response
+        content = response2.choices[0].message.content or ""
+        if instructions and "Reply UNIQUELY with a pure raw JSON string" in instructions:
+            try:
+                # Try to parse as JSON to validate
+                json.loads(content)
+                yield content
+            except json.JSONDecodeError:
+                # If not valid JSON, try to extract the first JSON object
+                from .ConvoJudge import ConvoJudge
+                fixed_response = ConvoJudge.extract_first_json_object(content)
+                if fixed_response:
+                    yield json.dumps(fixed_response)
+                else:
+                    yield "{}"
+        else:
+            yield content
         return
 
     logmsg("[completion_with_tools_async] Starting streaming path")
@@ -343,44 +366,64 @@ def completion_with_tools(
     try:
         logmsg("[completion_with_tools] Trying to get running loop")
         loop = asyncio.get_running_loop()
-        logmsg("[completion_with_tools] In async context, returning generator")
-        # We're in an async context, create a wrapper generator
-        async def async_wrapper():
-            async for msg in completion_with_tools_async(
-                wrap, model, temperature, instructions,
-                role_and_content_msgs, exclude_tools,
-                tools_user_data, stream):
+        logmsg("[completion_with_tools] In async context")
+
+        # Create a new event loop for synchronous execution
+        sync_loop = asyncio.new_event_loop()
+
+        def run_sync():
+            asyncio.set_event_loop(sync_loop)
+            result_queue = queue.Queue()
+
+            async def process_generator():
+                try:
+                    async for msg in completion_with_tools_async(
+                        wrap, model, temperature, instructions,
+                        role_and_content_msgs, exclude_tools,
+                        tools_user_data, stream):
+                        result_queue.put(('msg', msg))
+                    result_queue.put(('done', None))
+                except Exception as e:
+                    logerr(f"[process_generator] Error: {str(e)}")
+                    result_queue.put(('error', e))
+
+            sync_loop.run_until_complete(process_generator())
+            return result_queue
+
+        # Run in a separate thread to avoid event loop conflicts
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            result_queue = pool.submit(run_sync).result()
+
+        # Yield results from the queue
+        while True:
+            msg_type, msg = result_queue.get()
+            if msg_type == 'error':
+                raise msg
+            elif msg_type == 'done':
+                break
+            else:
                 yield msg
-        return async_wrapper()
+
     except RuntimeError:
         logmsg("[completion_with_tools] No running loop, creating new one")
         loop = get_or_create_eventloop()
         result_queue = queue.Queue()
 
         async def consume_generator() -> None:
-            messages = []
             try:
-                # For streaming mode, yield each message as it comes
-                if stream:
-                    async for msg in completion_with_tools_async(
-                        wrap, model, temperature, instructions,
-                        role_and_content_msgs, exclude_tools,
-                        tools_user_data, stream):
+                async for msg in completion_with_tools_async(
+                    wrap, model, temperature, instructions,
+                    role_and_content_msgs, exclude_tools,
+                    tools_user_data, stream):
+                    if stream:
                         logmsg(f"[consume_generator] Streaming message: {msg[:100]}...")
                         result_queue.put(('msg', msg))
-                    result_queue.put(('done', None))
-                # For non-streaming mode, concatenate all messages
-                else:
-                    async for msg in completion_with_tools_async(
-                        wrap, model, temperature, instructions,
-                        role_and_content_msgs, exclude_tools,
-                        tools_user_data, stream):
-                        logmsg(f"[consume_generator] Collecting message: {msg[:100]}...")
-                        messages.append(msg)
-                    result = ''.join(messages)
-                    logmsg(f"[consume_generator] Final concatenated message: {result[:100]}...")
-                    result_queue.put(('msg', result))
-                    result_queue.put(('done', None))
+                    else:
+                        logmsg(f"[consume_generator] Got message: {msg[:100]}...")
+                        result_queue.put(('msg', msg))
+                        break  # Only take the first message for non-streaming
+                result_queue.put(('done', None))
             except Exception as e:
                 logerr(f"[consume_generator] Error: {str(e)}")
                 result_queue.put(('error', e))
@@ -397,10 +440,23 @@ def completion_with_tools(
                     break
                 else:
                     yield msg
-        # For non-streaming mode, return the concatenated message
+        # For non-streaming mode, return the single message
         else:
             msg_type, msg = result_queue.get()
             if msg_type == 'error':
                 raise msg
-            return msg
+            elif msg_type == 'msg':
+                yield msg
+
+def get_tools(exclude_tools=None):
+    tools = []
+    for item in AssistTools.tool_items:
+        if exclude_tools is None or item.name not in exclude_tools:
+            tools.append({"type": "function", "function": item.definition})
+    return tools
+
+def prepare_messages(instructions: str, role_and_content_msgs: List[Dict[str, str]]):
+    return [
+        {"role": "system", "content": instructions},
+    ] + role_and_content_msgs
 
