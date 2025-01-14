@@ -220,7 +220,7 @@ async def handle_stream(response, wrap, messages, tools_user_data):
                 yield response_d.content, False, do_stop
 
 #==================================================================
-def completion_with_tools(
+async def completion_with_tools_async(
         wrap: OpenAIWrapper,
         model: str,
         temperature: float,
@@ -243,7 +243,7 @@ def completion_with_tools(
     if not stream:
         logmsg("[completion_with_tools_async] Non-streaming path")
         from openai.types.chat import ChatCompletion
-        from typing import Union, AsyncGenerator, Dict, Any
+        from typing import Union, Dict, Any
 
         response: Union[ChatCompletion, AsyncGenerator[Dict[str, Any], None]] = await wrap.CreateCompletionAsync(
             model=model,
@@ -275,7 +275,7 @@ def completion_with_tools(
             ]
         }
         messages.append(msg_dict)
-        messages += tools_out
+        messages.extend(tools_out)
 
         logmsg("[completion_with_tools_async] Making second completion call")
         response2: Union[ChatCompletion, AsyncGenerator[Dict[str, Any], None]] = await wrap.CreateCompletionAsync(
@@ -291,8 +291,6 @@ def completion_with_tools(
         return
 
     logmsg("[completion_with_tools_async] Starting streaming path")
-    did_call_tools = False
-    did_generate_after_tools_out = False
 
     # Only make one call initially
     params = {
@@ -305,10 +303,10 @@ def completion_with_tools(
     # Only include tools in the first call
     if tools:
         params["tools"] = tools
-        params["tool_choice"] = "auto"
 
     response = await wrap.CreateCompletionAsync(**params)
 
+    did_call_tools = False
     async for part, tools_called, stream_do_stop in handle_stream(response, wrap, messages, tools_user_data):
         if part:
             yield part
@@ -341,36 +339,42 @@ def completion_with_tools(
         stream=False) -> Iterator[str]:
 
     logmsg("[completion_with_tools] Starting")
-    async def run_completion():
-        async for msg in completion_with_tools_async(
-            wrap, model, temperature, instructions,
-            role_and_content_msgs, exclude_tools,
-            tools_user_data, stream):
-            logmsg(f"[run_completion] Got message: {msg[:100]}...")
-            yield msg
 
     try:
         logmsg("[completion_with_tools] Trying to get running loop")
         loop = asyncio.get_running_loop()
         logmsg("[completion_with_tools] In async context, returning generator")
-        return run_completion()
+        # We're in an async context, create a wrapper generator
+        async def async_wrapper():
+            async for msg in completion_with_tools_async(
+                wrap, model, temperature, instructions,
+                role_and_content_msgs, exclude_tools,
+                tools_user_data, stream):
+                yield msg
+        return async_wrapper()
     except RuntimeError:
         logmsg("[completion_with_tools] No running loop, creating new one")
         loop = get_or_create_eventloop()
         result_queue = queue.Queue()
 
-        async def consume_generator():
+        async def consume_generator() -> None:
+            messages = []
             try:
                 # For streaming mode, yield each message as it comes
                 if stream:
-                    async for msg in run_completion():
+                    async for msg in completion_with_tools_async(
+                        wrap, model, temperature, instructions,
+                        role_and_content_msgs, exclude_tools,
+                        tools_user_data, stream):
                         logmsg(f"[consume_generator] Streaming message: {msg[:100]}...")
                         result_queue.put(('msg', msg))
                     result_queue.put(('done', None))
                 # For non-streaming mode, concatenate all messages
                 else:
-                    messages = []
-                    async for msg in run_completion():
+                    async for msg in completion_with_tools_async(
+                        wrap, model, temperature, instructions,
+                        role_and_content_msgs, exclude_tools,
+                        tools_user_data, stream):
                         logmsg(f"[consume_generator] Collecting message: {msg[:100]}...")
                         messages.append(msg)
                     result = ''.join(messages)
@@ -383,14 +387,20 @@ def completion_with_tools(
 
         loop.run_until_complete(consume_generator())
 
-        # Keep yielding messages until we're done
-        while True:
-            status, value = result_queue.get()
-            if status == 'error':
-                raise value
-            elif status == 'msg':
-                logmsg(f"[completion_with_tools] Yielding message: {value[:100]}...")
-                yield value
-            elif status == 'done':
-                break
+        # For streaming mode, yield each message as it comes
+        if stream:
+            while True:
+                msg_type, msg = result_queue.get()
+                if msg_type == 'error':
+                    raise msg
+                elif msg_type == 'done':
+                    break
+                else:
+                    yield msg
+        # For non-streaming mode, return the concatenated message
+        else:
+            msg_type, msg = result_queue.get()
+            if msg_type == 'error':
+                raise msg
+            return msg
 
