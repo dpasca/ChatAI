@@ -16,6 +16,10 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room
 from io import BytesIO
 import threading
+import pickle
+import shutil
+from datetime import datetime, timedelta
+import atexit
 
 # Update the path for the modules below
 from Common.OpenAIWrapper import OpenAIWrapper
@@ -27,8 +31,11 @@ from Common.MsgThread import MsgThread
 from Common import AssistTools
 
 USER_BUCKET_PATH = "user_a_00001"
-ENABLE_SLEEP_LOGGING = False
-DO_REMOVE_USER_AGENT = True
+DO_REMOVE_USER_AGENT_FROM_META = True
+DO_PRINT_MEMORY_USAGE = False
+
+CLIENT_STORAGE_PATH = "_client_storage"
+CLIENT_EXPIRY_DAYS = 2
 
 #===============================================================================
 # Load the environment variables, override the existing ones
@@ -36,6 +43,8 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 #===============================================================================
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
 config_file = os.environ.get("CONFIG_FILE", "config_mei.json")
 
 # Load configuration from config.json
@@ -50,15 +59,23 @@ with open(config['assistant_instructions'], 'r') as f:
 _oa_wrap = OpenAIWrapper(api_key=os.environ.get("OPENAI_API_KEY"))
 
 #===============================================================================
+# App client object
+#===============================================================================
 from threading import Lock
 
 class AppClient:
     def __init__(self):
+        # Lock to protect the object since assistant replies are async (see stream_openai_response)
         self.lock = Lock()
+        # User info (timezone, user_agent, etc.)
         self._user_info = dict()
+        # The message thread for this client
         self._msg_thread = None
+        # Miscellaneous data / state storage
         self._misc_dict = dict()
+        # True if the client is connected via websocket
         self._connected = False
+        self._last_access = datetime.now()
 
     @property
     def user_info(self):
@@ -99,6 +116,42 @@ class AppClient:
         with self.lock:
             self._misc_dict[key] = value
 
+    def touch(self):
+        """Update last access time"""
+        with self.lock:
+            self._last_access = datetime.now()
+
+    def is_expired(self):
+        """Check if client has expired"""
+        with self.lock:
+            expiry_date = datetime.now() - timedelta(days=CLIENT_EXPIRY_DAYS)
+            return self._last_access < expiry_date
+
+    def to_dict(self):
+        """Convert to serializable dictionary"""
+        with self.lock:
+            return {
+                'user_info': self._user_info,
+                'msg_thread': self._msg_thread.to_dict() if self._msg_thread else None,
+                'misc_dict': self._misc_dict,
+                'connected': self._connected,
+                'last_access': self._last_access
+            }
+
+    @classmethod
+    def from_dict(cls, data):
+        """Create instance from dictionary"""
+        instance = cls()
+        with instance.lock:
+            instance._user_info = data['user_info']
+            instance._misc_dict = data['misc_dict']
+            instance._connected = data['connected']
+            instance._last_access = data['last_access']
+            # Reconstruct MsgThread if it exists
+            if data['msg_thread']:
+                instance._msg_thread = MsgThread.from_dict(data['msg_thread'], wrap=_oa_wrap)
+        return instance
+
 # TODO: store this in a database
 _app_clients = {}
 
@@ -106,6 +159,7 @@ def get_app_client(client_id):
     global _app_clients
     if client_id not in _app_clients:
         _app_clients[client_id] = AppClient()
+    _app_clients[client_id].touch()
     return _app_clients[client_id]
 
 def client_get_user_info(client_id):
@@ -163,6 +217,15 @@ def create_msg_thread(client_id, force_new) -> None:
         temperature=config["support_model_temperature"])
 
 #===============================================================================
+def dump_memory_usage(msg : str):
+    if not DO_PRINT_MEMORY_USAGE:
+        return
+    import psutil
+    process = psutil.Process(os.getpid())
+    logmsg(f"Memory usage ({msg}): {process.memory_info().rss / 1024 / 1024:.2f} MB")
+
+
+#===============================================================================
 _storage = None
 if os.getenv("DO_STORAGE_CONTAINER") is not None:
     logmsg("Creating storage...")
@@ -185,9 +248,75 @@ AssistTools.initialize_tools(
     )
 
 #===============================================================================
+# Add these functions to handle storage
+def save_client(client_id):
+    if not os.path.exists(CLIENT_STORAGE_PATH):
+        os.makedirs(CLIENT_STORAGE_PATH)
+
+    logmsg(f"Saving client {client_id}")
+    file_path = os.path.join(CLIENT_STORAGE_PATH, f"{client_id}.pkl")
+    with open(file_path, 'wb') as f:
+        client = get_app_client(client_id)
+        pickle.dump(client.to_dict(), f)
+
+# Purge expired client files from disk
+# NOTE: This only touches files from disk, so should be thread-safe
+def purge_expired_client_files():
+    if not os.path.exists(CLIENT_STORAGE_PATH):
+        return
+
+    expired = [cid for cid, client in _app_clients.items() if client.is_expired()]
+    for cid in expired:
+        os.remove(os.path.join(CLIENT_STORAGE_PATH, f"{cid}.pkl"))
+
+# Load clients from disk (meant to be called at startup)
+def load_clients():
+    global _app_clients
+    _app_clients = {}
+
+    if not os.path.exists(CLIENT_STORAGE_PATH):
+        return
+
+    for filename in os.listdir(CLIENT_STORAGE_PATH):
+        if filename.endswith('.pkl'):
+            client_id = filename[:-4]  # Remove .pkl
+            file_path = os.path.join(CLIENT_STORAGE_PATH, filename)
+            try:
+                with open(file_path, 'rb') as f:
+                    data = pickle.load(f)
+                    client = AppClient.from_dict(data)
+                    if not client.is_expired():
+                        _app_clients[client_id] = client
+                    else:
+                        os.remove(file_path)
+            except (EOFError, pickle.UnpicklingError):
+                # Remove corrupted files
+                os.remove(file_path)
+
+#===============================================================================
+# Add periodic save functionality
+_last_periodic_check = datetime.now()
+def periodic_check():
+    global _last_periodic_check
+    now = datetime.now()
+    if now - _last_periodic_check > timedelta(minutes=5):
+        _last_periodic_check = now
+        purge_expired_client_files()
+
+#===============================================================================
 # Initialize Flask app
 def create_app():
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        template_folder=os.path.join(script_dir, 'templates'),
+        static_folder=os.path.join(script_dir, 'static'),
+    )
+
+    # Purge expired clients first
+    purge_expired_client_files()
+    # Load the clients' state
+    load_clients()
+
     app.secret_key = os.environ.get("CHATAI_FLASK_SECRET_KEY")
 
     # Determine running environment
@@ -268,20 +397,22 @@ def clear_chat():
     if (client_id := request.cookies.get('CustomClientId')) is None:
         return jsonify({'error': 'No client ID found'}), 400
 
-    create_msg_thread(client_id, force_new=True)
+    create_msg_thread(client_id, force_new=True) # Create a new empty thread
+    save_client(client_id) # Save the client with the empty thread
 
     return redirect(url_for('index'))
 
-@app.route('/reset_expired_chat', methods=['POST'])
-def reset_expired_chat():
-    logmsg("In route /reset_expired_chat")
-    # Force-create a new thread
-    if (client_id := request.cookies.get('CustomClientId')) is None:
-        return jsonify({'error': 'No client ID found'}), 400
-
-    create_msg_thread(client_id, force_new=True)
-
-    return redirect(url_for('index'))
+#@app.route('/reset_expired_chat', methods=['POST'])
+#def reset_expired_chat():
+#    logmsg("In route /reset_expired_chat")
+#    # Force-create a new thread
+#    if (client_id := request.cookies.get('CustomClientId')) is None:
+#        return jsonify({'error': 'No client ID found'}), 400
+#
+#    create_msg_thread(client_id, force_new=True) # Create a new empty thread
+#    save_client(client_id) # Save the client with the empty thread
+#
+#    return redirect(url_for('index'))
 
 #===============================================================================
 def make_client_room(client_id):
@@ -473,7 +604,7 @@ def stream_openai_response(client_id):
             continue
         reply_text += part
         #print(part, end="")
-        
+
         # Resend the full text for the first few parts
         # This is a HACK for the issue of the first part getting an error
         part_cnt += 1
@@ -495,6 +626,12 @@ def stream_openai_response(client_id):
     # End the stream with a special signal, e.g., '$END_TOKEN$'
     try:
         socketio.emit('stream', {'src_id': src_id, 'text': '$END_TOKEN$'}, room=client_room)
+
+        # Save the client
+        save_client(client_id)
+
+        # Do periodic checks
+        periodic_check()
     except Exception as e:
         logerr(f"Error sending $END_TOKEN$ message to session {client_room}: {e}")
 
@@ -517,7 +654,7 @@ def make_user_metadata_dict(client_id):
         msg_metadata.update(uinfo)
 
         # Remove user_agent if requested
-        if DO_REMOVE_USER_AGENT and 'user_agent' in uinfo:
+        if DO_REMOVE_USER_AGENT_FROM_META and 'user_agent' in uinfo:
             msg_metadata.pop('user_agent', None)
 
         # Add the local time as a string like 2024-10-17T16:27:28.924857+09:00
@@ -530,6 +667,8 @@ def make_user_metadata_dict(client_id):
 #==================================================================
 @socketio.on('send_message')
 def handle_send_message(json, methods=['GET', 'POST']):
+
+    dump_memory_usage("send_message START")
 
     client_id = request.args.get('CustomClientId')
 
@@ -549,6 +688,7 @@ def handle_send_message(json, methods=['GET', 'POST']):
         # Ensure there's an active message thread
         if not client_has_msg_thread(client_id):
             emit('stream', {'text': 'No message thread loaded, please reload the page.', 'isError': True}, room=client_room)
+            dump_memory_usage("send_message END")
             return  # Exit if there's no usable message thread
 
         # Create a dictionary with the user metadata
@@ -569,6 +709,8 @@ def handle_send_message(json, methods=['GET', 'POST']):
             args=(client_id,) # NOTE: needs the comma to make it a tuple
             ).start()
 
+        dump_memory_usage("send_message END")
+
         # Respond with a "processing" status and with the user message ID
         # We need the user message ID to match the addendums/fact-checks
         return jsonify({'status': 'processing',
@@ -576,7 +718,13 @@ def handle_send_message(json, methods=['GET', 'POST']):
     except Exception as e:
         logerr(f"KeyError: {str(e)}")
         emit('stream', {'text': 'The session has been disconnected. Please reload the page.', 'isError': True}, room=client_room)
+        dump_memory_usage("send_message END")
         return jsonify({'status': 'error', 'message': 'Session disconnected'})
+
+## Add cleanup on shutdown
+#@atexit.register
+#def cleanup():
+#    save_clients()
 
 if __name__ == '__main__':
     #app.run(host='0.0.0.0', port=8080, debug=True)

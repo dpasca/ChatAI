@@ -114,18 +114,19 @@ def ddgsTextSearch(query, max_results=None):
     """
     logmsg(f"QUERY: {query}")
     max_retries = 2
+    results = []  # Initialize results list
     for attempt in range(max_retries):
         try:
             with DDGS() as ddgs:
                 results = [r for r in ddgs.text(query, max_results=max_results)]
-            return results
+            break  # If successful, break out of retry loop
         except DuckDuckGoSearchException as e:
             if attempt < max_retries - 1:
                 logwarn(f"DuckDuckGo search failed. Retrying in 5 seconds. Attempt {attempt + 1}/{max_retries}")
                 time.sleep(5)
             else:
                 logerr(f"DuckDuckGo search failed after {max_retries} attempts: {str(e)}")
-                return []
+    return results
 
 def braveTextSearch(query, max_results=None):
     """

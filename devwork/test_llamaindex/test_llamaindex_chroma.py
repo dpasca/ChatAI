@@ -34,6 +34,10 @@ else:
     storage_context = StorageContext.from_defaults(persist_dir=INDEX_PERSIST_DIR, vector_store=vector_store)
     index = load_index_from_storage(storage_context)
 
+# Get document count directly from the Chroma collection
+doc_count = chroma_collection.count()
+print(f"Found {doc_count} documents in the index")
+
 import time
 
 class TimerLogger:

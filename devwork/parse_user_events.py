@@ -16,7 +16,7 @@ def parse_logs():
     user_events = defaultdict(lambda: defaultdict(list))  # Nested defaultdict for endpoints
 
     print(f"Parsing logs from {LOG_FILE_PATH}")
-    
+
     with open(LOG_FILE_PATH, 'r') as log_file:
         for line in log_file:
             match = log_pattern.search(line)

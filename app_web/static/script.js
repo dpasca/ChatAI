@@ -101,9 +101,6 @@ function appendMessage(message, assistant_name='') {
         }
 
         chatBox.appendChild(messageDiv); // Append the new div to the chatBox
-    } else {
-        // If updating an existing message, clear its content first
-        messageDiv.innerHTML = ''; // This clears the existing content
     }
 
     // Create the content HTML for the new or updated message

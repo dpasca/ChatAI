@@ -14,7 +14,21 @@ from typing import List, Dict, Optional, Any
 from .OpenAIWrapper import OpenAIWrapper
 
 META_TAG = "message_meta"
+# WARNING: Do NOT enable this in production !
+ENABLE_MEMORY_PROFILING = False # Never commit with True !
 
+import os
+from functools import wraps
+
+def profile_all_methods(cls):
+    if ENABLE_MEMORY_PROFILING:
+        from memory_profiler import profile
+        for attr_name, attr_value in cls.__dict__.items():
+            if callable(attr_value):
+                setattr(cls, attr_name, profile(attr_value))
+    return cls
+
+@profile_all_methods
 class MsgThread(BaseModel):
     wrap: OpenAIWrapper
     thread_id: str
@@ -36,7 +50,7 @@ class MsgThread(BaseModel):
 
     def to_json(self):
         # Convert messages to a serializable format
-        serializable_messages = [self.message_to_dict(m) for m in self.messages]
+        serializable_messages = [MsgThread.message_to_dict(m) for m in self.messages]
         return json.dumps({
             'thread_id': self.thread_id,
             'messages': serializable_messages})
@@ -76,14 +90,33 @@ class MsgThread(BaseModel):
         return msg
 
 
-    def message_to_dict(self, message):
-        # Convert each content item in the list to its dictionary representation
+    # Convert each content item in the list to its dictionary representation
+    @staticmethod
+    def message_to_dict(message):
         content_list = [{'type': c['type'], 'value': c['value']} for c in message['content']]
         return {
             'src_id': message['src_id'],
             'created_at': message['created_at'],
             'role': message['role'],
-            'content': content_list  # Now this is always a list of dictionaries
+            'content': content_list
+        }
+
+    # Convert a dictionary back to a message
+    @staticmethod
+    def dict_to_message(message_dict):
+        if not isinstance(message_dict, dict):
+            raise ValueError(f"Expected dict, got {type(message_dict)}")
+
+        required_fields = {'src_id', 'created_at', 'role', 'content'}
+        if not all(field in message_dict for field in required_fields):
+            raise ValueError(f"Message dict missing required fields: {required_fields - message_dict.keys()}")
+
+        return {
+            'src_id': message_dict['src_id'],
+            'created_at': message_dict['created_at'],
+            'role': message_dict['role'],
+            'content': [{'type': c['type'], 'value': c['value']}
+                       for c in message_dict['content']]
         }
 
     def is_valid_message(self, message):
@@ -222,4 +255,34 @@ class MsgThread(BaseModel):
                 result.append(msg)
 
         return result
+
+    @classmethod
+    def from_dict(cls, data: dict, wrap: OpenAIWrapper):
+        """Create a MsgThread instance from a dictionary"""
+        # Convert message dictionaries back to messages
+        messages = [cls.dict_to_message(msg_dict) for msg_dict in data['messages']]
+
+        instance = cls(
+            wrap=wrap,
+            thread_id=data['thread_id'],
+            messages=messages
+        )
+
+        # Recreate the judge if it existed
+        if data.get('had_judge', False):
+            instance.create_judge(
+                model=data.get('judge_model'),
+                temperature=data.get('judge_temperature')
+            )
+        return instance
+
+    def to_dict(self) -> dict:
+        """Convert MsgThread instance to a dictionary"""
+        return {
+            'thread_id': self.thread_id,
+            'messages': [MsgThread.message_to_dict(msg) for msg in self.messages],
+            'had_judge': self.judge is not None,
+            'judge_model': self.judge.model if self.judge else None,
+            'judge_temperature': self.judge.temperature if self.judge else None
+        }
 

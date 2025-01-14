@@ -24,6 +24,11 @@
             openLinksInNewTab: {{ open_links_in_new_tab | tojson | safe }},
         };
     </script>
+
+    <!-- Include our scripts -->
+    <script defer src="static/fact_check.js"></script>
+    <script defer src="static/script.js"></script>
+    <script defer src="static/theme_support.js"></script>
   </head>
   <body>
     <!-- Navbar -->
@@ -72,7 +77,7 @@
     <div class="input-area">
         <!-- Buttons above the input field -->
         <button id="erase-button" data-i18n="erase_chat" class="btn btn-warning btn-sm mr-2" style="display: none;">
-            Erase Chat
+            New Chat
         </button>
         <button id="reload-button" data-i18n="reload_chat" class="btn btn-info btn-sm" style="display: none;">
             Reload Chat
@@ -131,9 +136,6 @@
     <script>
       var SERVER_URL = "{{ server_url }}";
     </script>
-
-    <!-- Include our own script -->
-    <script src="static/script.js"></script>
 
     <!-- Code to handle the OpenAI API status report -->
     <script>
@@ -207,7 +209,7 @@
             en: {
               translation: {
                 "send": "Send",
-                "erase_chat": "Erase Chat",
+                "erase_chat": "New Chat",
                 "reload_chat": "Reload Chat",
                 "use_shift_enter": "Use Shift+Enter to insert a new line",
                 "type_a_message": "Type a message...",
@@ -219,7 +221,7 @@
             it: {
               translation: {
                 "send": "Invia",
-                "erase_chat": "Elimina Chat",
+                "erase_chat": "Nuova Chat",
                 "reload_chat": "Ricarica Chat",
                 "use_shift_enter": "Usa Shift+Invio per inserire una nuova riga",
                 "type_a_message": "Scrivi un messaggio...",
@@ -242,6 +244,7 @@
           method: 'POST',
           credentials: 'include'
         })
+        .then(loadChatHistory)
         .then(function() {
           $('#chatbox').html('');
           showHideButton('erase-button', false);
@@ -464,61 +467,6 @@
       });
 
       //
-      window.addEventListener('load', function() {
-        var navbarHeight = document.querySelector('.navbar').offsetHeight;
-        navbarHeight += 8; // Add some padding
-        document.body.style.paddingTop = navbarHeight + 'px';
-      });
-
-      function initializeTheme() {
-        let isDarkTheme;
-        // Check if the theme was previously saved in localStorage
-        if (localStorage.getItem('theme')) {
-          isDarkTheme = localStorage.getItem('theme') === 'dark';
-        } else {
-          // If not, use the system's theme
-          isDarkTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        }
-        // Apply initial theme state without toggling
-        applyTheme(isDarkTheme);
-      }
-
-      function toggleTheme() {
-          const isDarkTheme = document.body.classList.contains('dark-theme');
-          // Toggle theme to the opposite state
-          applyTheme(!isDarkTheme);
-      }
-
-      function applyTheme(isDarkTheme) {
-          const body = document.body;
-          const themeToggleCheckbox = document.getElementById('theme-toggle');
-          const navbar = document.getElementById('main-navbar');
-          const moonIcon = document.querySelector('.bi-moon-stars-fill');
-          const sunIcon = document.querySelector('.bi-sun-fill');
-
-          // Apply theme class on body
-          body.classList.toggle('dark-theme', isDarkTheme);
-
-          // Update navbar classes for the theme
-          if (isDarkTheme) {
-              navbar.classList.remove('navbar-light', 'bg-light');
-              navbar.classList.add('navbar-dark', 'bg-dark');
-          } else {
-              navbar.classList.remove('navbar-dark', 'bg-dark');
-              navbar.classList.add('navbar-light', 'bg-light');
-          }
-
-          // Update checkbox based on current theme
-          themeToggleCheckbox.checked = isDarkTheme;
-
-          // Update icons visibility based on theme
-          moonIcon.style.display = isDarkTheme ? 'none' : 'inline-block';
-          sunIcon.style.display = isDarkTheme ? 'inline-block' : 'none';
-
-          // Save theme preference
-          localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
-      }
-
       window.addEventListener('load', function() {
         var navbarHeight = document.querySelector('.navbar').offsetHeight;
         navbarHeight += 8; // Add some padding
