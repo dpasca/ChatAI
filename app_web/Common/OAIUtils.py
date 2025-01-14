@@ -8,9 +8,38 @@
 import re
 from .logger import *
 import json
+import asyncio
+import threading
 from .OpenAIWrapper import OpenAIWrapper
 from . import AssistTools
-from typing import List, Dict, Iterator
+from typing import List, Dict, Iterator, AsyncGenerator, Optional
+import queue
+
+# Thread-local storage for event loops
+thread_local = threading.local()
+
+def get_or_create_eventloop() -> asyncio.AbstractEventLoop:
+    """Get the event loop for current thread or create a new one if it doesn't exist."""
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        # Create a new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop
+
+def run_async(coro):
+    """Run an async coroutine in the current thread's event loop."""
+    try:
+        # First try to get the running loop
+        loop = asyncio.get_running_loop()
+        # We're already in an async context, just return the coroutine
+        # This allows the caller to handle it appropriately
+        return coro
+    except RuntimeError:
+        # No running loop, create one or get the existing one
+        loop = get_or_create_eventloop()
+        return loop.run_until_complete(coro)
 
 # Handle OpenAI's API bug, where multi_tool_use.parallel is exposed
 def handle_multi_tool_use(call, tools_user_data):
@@ -100,8 +129,8 @@ def apply_tools(tool_calls, wrap, tools_user_data) -> list:
     return messages
 
 #==================================================================
-def handle_stream(response, wrap, messages, tools_user_data):
-
+async def handle_stream(response, wrap, messages, tools_user_data):
+    """Handle a streaming response from OpenAI API"""
     # A class to store the tool call that can mimic the structure tool_calls in the response
     class ToolCall:
         def __init__(self, id=None, function_name=None, function_arguments=''):
@@ -118,15 +147,12 @@ def handle_stream(response, wrap, messages, tools_user_data):
     full_calls = {}
     cur_call_index = None
     accumulating_calls = False
-
     already_processed_some_calls = False
 
     # Process the stream of responses
-    for response_it in response:
+    async for response_it in response:
         response_d = response_it.choices[0].delta
-        #logmsg(f"** response_it: {response_it}")
 
-        # NOTE: Useful but not sufficient !
         do_stop = (response_d.content is None and
                    response_d.tool_calls is None and
                    response_it.choices[0].finish_reason != "tool_calls")
@@ -187,9 +213,11 @@ def handle_stream(response, wrap, messages, tools_user_data):
             full_calls = {}
             already_processed_some_calls = True
 
-            yield response_d.content, True, False
+            if response_d.content:
+                yield response_d.content, True, False
         else:
-            yield response_d.content, False, do_stop
+            if response_d.content:
+                yield response_d.content, False, do_stop
 
 #==================================================================
 def completion_with_tools(
@@ -200,8 +228,9 @@ def completion_with_tools(
         role_and_content_msgs: List[Dict[str, str]],
         exclude_tools=None,
         tools_user_data=None,
-        stream=False) -> Iterator[str]:
+        stream=False) -> AsyncGenerator[str, None]:
 
+    logmsg(f"[completion_with_tools_async] Starting with stream={stream}")
     tools = []
     for item in AssistTools.tool_items:
         if exclude_tools is None or item.name not in exclude_tools:
@@ -211,65 +240,157 @@ def completion_with_tools(
         {"role": "system", "content": instructions},
     ] + role_and_content_msgs
 
-    #=== Handle the non-streaming path (easy)
-    def non_stream_path(messages):
-        res = wrap.CreateCompletion(model=model, temperature=temperature, messages=messages, tools=tools, stream=False)
-        #logmsg(f"Completion Response (NON Stream): {res}")
-
-        # If there are no tool calls, just pass the content of the message
-        res_msg = res.choices[0].message
-        if not res_msg.tool_calls:
-            yield res_msg.content
-        else:
-            # Proceed to call the tools
-            tools_out = apply_tools(res_msg.tool_calls, wrap, tools_user_data)
-            messages.append(res_msg)  # Add the response message to the conversation
-            messages += tools_out  # Add the messages from the tools
-            # Call the completion again now that we have the tools output
-            res2 = wrap.CreateCompletion(
-                model=model,
-                temperature=temperature,
-                messages=messages,
-                tools=None,
-                stream=False)
-            # Pass the content of the response
-            yield res2.choices[0].message.content
-
     if not stream:
-        yield from non_stream_path(messages=messages)
-        return
+        logmsg("[completion_with_tools_async] Non-streaming path")
+        from openai.types.chat import ChatCompletion
+        from typing import Union, AsyncGenerator, Dict, Any
 
-    #===
-    did_call_tools = False
-    did_generate_after_tools_out = False
-    max_loops = 4
-
-    for i in range(max_loops):
-        response = wrap.CreateCompletion(
+        response: Union[ChatCompletion, AsyncGenerator[Dict[str, Any], None]] = await wrap.CreateCompletionAsync(
             model=model,
             temperature=temperature,
             messages=messages,
-            #tools= tools if not did_call_tools else None,
             tools=tools,
-            stream=stream,
-        )
-        #logmsg(f"Completion with tools Response: {response}")
+            stream=False)
 
-        content = ""
-        for part, did_call_tools_now, do_stop in handle_stream(response, wrap, messages, tools_user_data):
-            if part is not None:
-                if part == '':
-                    content += '\n'
-                else:
-                    content += part
-                yield part
+        if isinstance(response, AsyncGenerator):
+            raise ValueError("Expected ChatCompletion but got AsyncGenerator")
 
-        did_generate_after_tools_out = (
-            did_generate_after_tools_out or
-                (did_call_tools and not did_call_tools_now))
+        message = response.choices[0].message
+        if not hasattr(message, 'tool_calls') or not message.tool_calls:
+            logmsg("[completion_with_tools_async] No tool calls, yielding message content")
+            yield message.content or ""
+            return
 
-        did_call_tools = did_call_tools or did_call_tools_now
+        logmsg("[completion_with_tools_async] Processing tool calls")
+        tools_out = apply_tools(message.tool_calls, wrap, tools_user_data)
+        msg_dict = {
+            "role": "assistant",
+            "content": message.content or "",
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                } for tc in message.tool_calls
+            ]
+        }
+        messages.append(msg_dict)
+        messages += tools_out
 
-        if do_stop and (did_generate_after_tools_out or not did_call_tools):
+        logmsg("[completion_with_tools_async] Making second completion call")
+        response2: Union[ChatCompletion, AsyncGenerator[Dict[str, Any], None]] = await wrap.CreateCompletionAsync(
+            model=model,
+            temperature=temperature,
+            messages=messages,
+            stream=False)
+
+        if isinstance(response2, AsyncGenerator):
+            raise ValueError("Expected ChatCompletion but got AsyncGenerator")
+
+        yield response2.choices[0].message.content or ""
+        return
+
+    logmsg("[completion_with_tools_async] Starting streaming path")
+    did_call_tools = False
+    did_generate_after_tools_out = False
+
+    # Only make one call initially
+    params = {
+        "model": model,
+        "temperature": temperature,
+        "messages": messages,
+        "stream": True
+    }
+
+    # Only include tools in the first call
+    if tools:
+        params["tools"] = tools
+        params["tool_choice"] = "auto"
+
+    response = await wrap.CreateCompletionAsync(**params)
+
+    async for part, tools_called, stream_do_stop in handle_stream(response, wrap, messages, tools_user_data):
+        if part:
+            yield part
+
+        if tools_called:
+            did_call_tools = True
+            # Make one more call without tools to get the final response
+            final_response = await wrap.CreateCompletionAsync(
+                model=model,
+                temperature=temperature,
+                messages=messages,
+                stream=True
+            )
+            async for final_part, _, final_stop in handle_stream(final_response, wrap, messages, tools_user_data):
+                if final_part:
+                    yield final_part
             break
+
+        if stream_do_stop and not did_call_tools:
+            break
+
+def completion_with_tools(
+        wrap: OpenAIWrapper,
+        model: str,
+        temperature: float,
+        instructions: str,
+        role_and_content_msgs: List[Dict[str, str]],
+        exclude_tools=None,
+        tools_user_data=None,
+        stream=False) -> Iterator[str]:
+
+    logmsg("[completion_with_tools] Starting")
+    async def run_completion():
+        async for msg in completion_with_tools_async(
+            wrap, model, temperature, instructions,
+            role_and_content_msgs, exclude_tools,
+            tools_user_data, stream):
+            logmsg(f"[run_completion] Got message: {msg[:100]}...")
+            yield msg
+
+    try:
+        logmsg("[completion_with_tools] Trying to get running loop")
+        loop = asyncio.get_running_loop()
+        logmsg("[completion_with_tools] In async context, returning generator")
+        return run_completion()
+    except RuntimeError:
+        logmsg("[completion_with_tools] No running loop, creating new one")
+        loop = get_or_create_eventloop()
+        result_queue = queue.Queue()
+
+        async def consume_generator():
+            try:
+                # For streaming mode, yield each message as it comes
+                if stream:
+                    async for msg in run_completion():
+                        logmsg(f"[consume_generator] Streaming message: {msg[:100]}...")
+                        result_queue.put(('msg', msg))
+                    result_queue.put(('done', None))
+                # For non-streaming mode, concatenate all messages
+                else:
+                    messages = []
+                    async for msg in run_completion():
+                        logmsg(f"[consume_generator] Collecting message: {msg[:100]}...")
+                        messages.append(msg)
+                    result = ''.join(messages)
+                    logmsg(f"[consume_generator] Final concatenated message: {result[:100]}...")
+                    result_queue.put(('msg', result))
+                    result_queue.put(('done', None))
+            except Exception as e:
+                logerr(f"[consume_generator] Error: {str(e)}")
+                result_queue.put(('error', e))
+
+        loop.run_until_complete(consume_generator())
+
+        # Keep yielding messages until we're done
+        while True:
+            status, value = result_queue.get()
+            if status == 'error':
+                raise value
+            elif status == 'msg':
+                logmsg(f"[completion_with_tools] Yielding message: {value[:100]}...")
+                yield value
+            elif status == 'done':
+                break
 

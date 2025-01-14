@@ -5,10 +5,21 @@
 // Desc: Support for chat.html
 //==================================================================
 
-let connectTimeout;
+// Global variables and initialization
+(function() {
+    // Only declare these if they haven't been declared yet
+    if (typeof window.CONNECT_TIMEOUT_MS === 'undefined') {
+        window.CONNECT_TIMEOUT_MS = 60000;
+    }
+    if (typeof window.socket === 'undefined') {
+        window.socket = null;
+    }
+    if (typeof window.connectTimeout === 'undefined') {
+        window.connectTimeout = null;
+    }
+})();
 
-const CONNECT_TIMEOUT_MS = 60000;
-
+// Utility functions
 function showHideButton(buttonId, show) {
     document.getElementById(buttonId).style.display = show ? 'block' : 'none';
 }
@@ -22,28 +33,104 @@ function handleError(response) {
     return response.json();
 }
 
+// User info handling
 async function postUserInfo() {
-  let timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  let userAgent = navigator.userAgent;
+    let timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    let userAgent = navigator.userAgent;
 
-  try {
-    const response = await fetch(SERVER_URL+'/api/user_info', {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        timezone: timeZone,
-        user_agent: userAgent
-      })
+    try {
+        const response = await fetch(window.SERVER_URL+'/api/user_info', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                timezone: timeZone,
+                user_agent: userAgent
+            })
+        });
+
+        await handleError(response);
+    } catch (error) {
+        console.error('Error posting user info:', error);
+    }
+}
+
+// Socket.IO handling
+function initializeSocket() {
+    if (window.socket) {
+        console.log('Socket already initialized');
+        return;
+    }
+
+    window.socket = io(window.SERVER_URL, {
+        query: { CustomClientId: window.clientId },
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 5
     });
 
-    await handleError(response); // Use handleError to process the response
-  } catch (error) {
-    console.error('Error posting user info:', error);
-  }
+    window.socket.on('connect', () => {
+        console.log('Connected to server');
+        clearTimeout(window.connectTimeout);
+        // After connection, load chat history and post user info
+        loadChatHistory();
+    });
+
+    window.socket.on('connect_error', (error) => {
+        console.error('Connection error:', error);
+    });
+
+    window.socket.on('disconnect', (reason) => {
+        console.log('Disconnected:', reason);
+        if (reason === 'io server disconnect') {
+            window.socket.connect();
+        }
+    });
+
+    window.socket.on('message', (data) => {
+        console.log('Received message:', data);
+        if (data.final) {
+            removeWaitingAssistMessage();
+        }
+        appendMessage(data);
+    });
+
+    window.connectTimeout = setTimeout(() => {
+        console.error('Connection timeout');
+        window.socket.disconnect();
+    }, window.CONNECT_TIMEOUT_MS);
 }
+
+// Chat history handling
+async function loadChatHistory() {
+    try {
+        await postUserInfo();
+        const response = await fetch(window.SERVER_URL+'/get_history', {
+            method: 'GET',
+            credentials: 'include'
+        });
+        const data = await handleError(response);
+
+        if (data.messages) {
+            for (let message of data.messages) {
+                appendMessage(message);
+            }
+            if (data.messages.length > 0) {
+                showHideButton('erase-button', true);
+            }
+        }
+    } catch (error) {
+        console.error('Error loading chat history:', error);
+    }
+}
+
+// Initialize when the page loads
+document.addEventListener('DOMContentLoaded', () => {
+    initializeSocket();
+});
 
 // Instantiate markdown-it with Prism.js for syntax highlighting
 const md = window.markdownit({
@@ -135,10 +222,6 @@ function makeMDLink(title, url) {
     }
     return `[${title}](${url})`;
 }
-
-//
-const FC_COLLAPSE_POSTFIX = '_fc_coll';
-const FC_EXPAND_POSTFIX = '_fc_expa';
 
 // Call this in the HTML file at document.addEventListener('DOMContentLoaded', ...)
 function setupFactCheckEventDelegation() {
@@ -313,7 +396,7 @@ function sendMessage(userInput, assistant_name) {
     appendWaitingAssistMessage(assistant_name);
 
     // Now, emit the message through the WebSocket instead of making an HTTP request
-    socket.emit('send_message', { message: userInput, src_id: clientMsgId });
+    window.socket.emit('send_message', { message: userInput, src_id: clientMsgId });
 
     // Reset input area
     var inputBox = document.getElementById('user-input');
@@ -323,7 +406,7 @@ function sendMessage(userInput, assistant_name) {
 
 function pollForAddendums() {
     console.log("Polling for addendums...");
-    fetch(SERVER_URL+'/get_addendums', {
+    fetch(window.SERVER_URL+'/get_addendums', {
         method: 'GET',
         credentials: 'include'
     })
