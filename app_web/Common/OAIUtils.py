@@ -358,7 +358,7 @@ async def completion_with_tools_async(
             )
             async for final_part, _, final_stop in handle_stream(final_response, wrap, messages, tools_user_data):
                 if final_part:
-                    logmsg(f"[completion_with_tools_async] Final response part: {final_part[:100]}...")
+                    #logmsg(f"[completion_with_tools_async] Final response part: {final_part[:100]}...")
                     yield final_part
                 if final_stop:
                     break
@@ -433,10 +433,10 @@ def completion_with_tools(
                     role_and_content_msgs, exclude_tools,
                     tools_user_data, stream):
                     if stream:
-                        logmsg(f"[consume_generator] Streaming message: {msg[:100]}...")
+                        #logmsg(f"[consume_generator] Streaming message: {msg[:100]}...")
                         result_queue.put(('msg', msg))
                     else:
-                        logmsg(f"[consume_generator] Got message: {msg[:100]}...")
+                        #logmsg(f"[consume_generator] Got message: {msg[:100]}...")
                         result_queue.put(('msg', msg))
                         break  # Only take the first message for non-streaming
                 result_queue.put(('done', None))
