@@ -207,8 +207,16 @@ function appendMessage(message, assistant_name='') {
         }
     }
 
+    // Save any existing fact-check elements
+    const factCheckElements = [];
+    const existingFactChecks = messageDiv.querySelectorAll('.fact-check-collapsed, .fact-check-expanded');
+    existingFactChecks.forEach(el => factCheckElements.push(el));
+
     // Set the innerHTML of the messageDiv to the new content
     messageDiv.innerHTML = messageContentHTML;
+
+    // Re-add any fact-check elements that were present
+    factCheckElements.forEach(el => messageDiv.appendChild(el));
 }
 
 function makeDispLink(url) {

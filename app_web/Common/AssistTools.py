@@ -10,6 +10,7 @@ import json
 import time
 import pytz
 from datetime import datetime
+from typing import Union
 
 from duckduckgo_search import DDGS
 from duckduckgo_search.exceptions import DuckDuckGoSearchException
@@ -23,6 +24,9 @@ from .MsgThread import MsgThread as MsgThread
 from .ToolItem import ToolItem
 from .RAGSystem import RAGSystem
 
+import os
+import requests
+
 # Directory for persisting llmaindex index data
 RAG_INDEX_PERSIST_DIR = "_index_data"
 # Directory for persisting Chroma data
@@ -34,8 +38,8 @@ tool_items_dict = {}
 
 #==================================================================
 # Define the super_get_user_info function
-super_get_user_info: Callable[[Optional[dict]], dict] = lambda arguments=None: None
-super_get_main_MsgThread: Callable[[], MsgThread] = lambda: None
+super_get_user_info: Optional[Callable[[Optional[dict]], dict]] = None
+super_get_main_MsgThread: Optional[Callable[[Optional[dict]], Any]] = None
 
 #==================================================================
 async def execute_tool(tool_item, parameters: Dict[str, Any]) -> Any:
@@ -101,88 +105,82 @@ def fallback_tool_function(name: str, arguments: Any) -> Any:
     return perform_web_search({"query": full_query})
 
 #==================================================================
-def ddgsTextSearch(query, max_results=None):
-    """
-    Perform a text search using the DuckDuckGo Search API.
-
-    Args:
-        query (str): The search query string.
-        max_results (int, optional): The maximum number of search results to return. If None, returns all available results.
-
-    Returns:
-        list of dict: A list of search results, each result being a dictionary.
-    """
-    logmsg(f"QUERY: {query}")
-    max_retries = 2
-    results = []  # Initialize results list
-    for attempt in range(max_retries):
-        try:
-            with DDGS() as ddgs:
-                results = [r for r in ddgs.text(query, max_results=max_results)]
-            break  # If successful, break out of retry loop
-        except DuckDuckGoSearchException as e:
-            if attempt < max_retries - 1:
-                logwarn(f"DuckDuckGo search failed. Retrying in 5 seconds. Attempt {attempt + 1}/{max_retries}")
-                time.sleep(5)
-            else:
-                logerr(f"DuckDuckGo search failed after {max_retries} attempts: {str(e)}")
-    return results
-
-def braveTextSearch(query, max_results=None):
-    """
-    Perform a text search using the Brave Search API.
-    NOTE: It expects BRAVE_API_KEY to be set in the environment.
-
-    Returns:
-        list of dict: A list of search results, each result being a dictionary.
-    """
-    logmsg(f"QUERY: {query}")
-    brave = Brave()
+def ddgsTextSearch(query: str, max_results: int = 10) -> list:
+    """Perform a DuckDuckGo text search."""
     try:
-        results = brave.search(q=query, count=max_results)
-        #logmsg(f"Raw Brave search results: {results}")
-
-        formatted_results = []
-        if hasattr(results, 'web') and hasattr(results.web, 'results'):
-            for result in results.web.results:
-                formatted_result = {
-                    'title': result.title,
-                    'url': str(result.url),
-                    'description': result.description,
-                    'language': result.language,
-                    'family_friendly': result.family_friendly,
-                    'thumbnail': result.thumbnail.src if result.thumbnail else ''
-                }
-                formatted_results.append(formatted_result)
-                #logmsg(f"Formatted result: {formatted_result}")
-        else:
-            logmsg(f"Unexpected results structure: {type(results)}")
-
-        return formatted_results
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+            return results if results else []
     except Exception as e:
-        logerr(f"Failed to perform Brave search: {str(e)}")
+        logerr(f"DuckDuckGo search failed: {str(e)}")
+        return []
+
+def braveTextSearch(query: str, max_results: Optional[int] = None) -> list:
+    """Perform a text search using the Brave Search API."""
+    if "BRAVE_API_KEY" not in os.environ:
+        return []
+
+    try:
+        headers = {
+            "X-Subscription-Token": os.environ["BRAVE_API_KEY"],
+            "Accept": "application/json",
+        }
+        params = {"q": query}
+        if max_results:
+            params["count"] = str(max_results)
+
+        response = requests.get(
+            "https://api.search.brave.com/res/v1/web/search",
+            headers=headers,
+            params=params,
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        results = []
+        if "web" in data and "results" in data["web"]:
+            results = data["web"]["results"]
+            if max_results:
+                results = results[:max_results]
+        return results
+    except Exception as e:
+        logerr(f"Brave search failed: {str(e)}")
         return []
 
 # Define your functions
-def perform_web_search(arguments, max_results=10):
-    if isinstance(arguments, dict) and "query" in arguments:
-        query = arguments["query"]
-        if "max_results" in arguments:
-            max_results = arguments["max_results"]
-    elif isinstance(arguments, str):
-        query = arguments
-    else:
-        logerr(f"Invalid arguments for perform_web_search: {arguments}")
-        return []
+def perform_web_search(arguments: Union[dict, str], max_results: int = 5) -> str:
+    """Perform a web search and return the results as a string."""
+    try:
+        # Extract query from arguments
+        if isinstance(arguments, dict):
+            if "query" not in arguments:
+                return "No query provided in arguments"
+            query = arguments["query"]
+            if "max_results" in arguments:
+                max_results = arguments["max_results"]
+        else:
+            query = arguments
 
-    # If we have a Brave API key, use it. Otherwise, use DuckDuckGo.
-    if "BRAVE_API_KEY" in os.environ:
-        try:
-            return braveTextSearch(query, max_results=max_results)
-        except Exception as e:
-            logwarn(f"Brave search failed, falling back to DuckDuckGo: {str(e)}")
+        # Perform the search
+        results = ddgsTextSearch(query)
+        if not results:
+            return "No results found"
 
-    return ddgsTextSearch(query, max_results=max_results)
+        # Take only the first max_results
+        results = results[:max_results]
+        
+        # Format the results as a string
+        formatted_results = []
+        for result in results:
+            title = result.get('title', '')
+            url = result.get('url', '')
+            if title and url:
+                formatted_results.append(f"- {title}: {url}")
+        
+        return "\n".join(formatted_results) if formatted_results else "No results found"
+    except Exception as e:
+        logerr(f"Error in web search: {e}")
+        return f"Error performing web search: {e}"
 
 """
 def get_user_info(arguments=None):
@@ -205,25 +203,31 @@ def get_user_local_time(arguments=None):
         "user_timezone": timezone }
 """
 
-def ask_research_assistant(arguments=None):
-
+def ask_research_assistant(arguments: Optional[dict] = None) -> str:
+    """Ask the research assistant for help."""
     # Ensure we have all the necessary args
-    #if not (arguments.get("wrap") or
-    if not (arguments.get("query") or
-            arguments.get("tools_user_data")):
+    if not arguments or not (arguments.get("query") or arguments.get("tools_user_data")):
         logerr("Missing arguments for ask_research_assistant")
         return f"Missing arguments. Got: {arguments}"
 
-    msg_thread = super_get_main_MsgThread(arguments)
+    # Get the message thread
+    msg_thread = None
+    if super_get_main_MsgThread is not None:
+        msg_thread = super_get_main_MsgThread(arguments)
 
     # If there is no main message thread, then perform a simple web search
-    if msg_thread is None or msg_thread.judge is None:
+    if msg_thread is None or not hasattr(msg_thread, 'judge') or msg_thread.judge is None:
         logwarn("No main message thread or judge found. Falling back to web search.")
-        return perform_web_search(arguments["query"], max_results=5)
+        return perform_web_search(arguments)
 
-    return msg_thread.judge.gen_research(
-                query=arguments["query"],
-                tools_user_data=arguments["tools_user_data"])
+    try:
+        result = msg_thread.judge.gen_research(
+            query=arguments["query"],
+            tools_user_data=arguments["tools_user_data"])
+        return str(result) if result is not None else "No research results available"
+    except Exception as e:
+        logerr(f"Error in research assistant: {e}")
+        return f"Error performing research: {e}"
 
 #==================================================================
 tool_items: List[ToolItem] = []
@@ -263,19 +267,22 @@ tool_items = [
 
 #==================================================================
 def initialize_tools(
-        enable_rag=False,
-        rag_query_instructions=None,
-        enable_web_search=True,
-        support_enable_research_assistant=True,
-        storage=None,
-        super_get_user_info_: Callable[[Optional[dict]], dict]=None,
-        super_get_main_MsgThread_: Callable[[], MsgThread]=None):
-
-    global super_get_main_MsgThread
-    super_get_main_MsgThread = super_get_main_MsgThread_
-
+    enable_rag: bool = False,
+    rag_query_instructions: Optional[str] = None,
+    enable_web_search: bool = False,
+    support_enable_research_assistant: bool = True,
+    storage: Optional[Any] = None,
+    super_get_user_info_: Optional[Callable[[Optional[dict]], dict]] = None,
+    super_get_main_MsgThread_: Optional[Callable[[Optional[dict]], Any]] = None,
+    ) -> None:
+    """Initialize the tools with the given parameters."""
+    global _storage
     global super_get_user_info
+    global super_get_main_MsgThread
+
+    _storage = storage
     super_get_user_info = super_get_user_info_
+    super_get_main_MsgThread = super_get_main_MsgThread_
 
     if enable_web_search:
         tool_items.append(
@@ -348,3 +355,15 @@ def initialize_tools(
     logmsg("Available tools:")
     for item in tool_items:
         logmsg(f"- {item.name} : {item.definition['description']}")
+
+def get_user_info(arguments: Optional[dict] = None) -> dict:
+    """Get user info from the super function if available."""
+    if super_get_user_info is None:
+        return {}
+    return super_get_user_info(arguments)
+
+def get_main_MsgThread(arguments: Optional[dict] = None) -> Any:
+    """Get message thread from the super function if available."""
+    if super_get_main_MsgThread is None:
+        return None
+    return super_get_main_MsgThread(arguments)

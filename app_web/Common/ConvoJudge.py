@@ -126,9 +126,10 @@ a potential form of verification, not as the actual answer.
             convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
         return convo
 
-    def genCompletion(self, instructions, convo, exclude_tools, tools_user_data=None):
+    async def genCompletion(self, instructions, convo, exclude_tools, tools_user_data=None):
+        """Generate a completion using the OpenAI API"""
         from .OAIUtils import completion_with_tools
-        response = completion_with_tools(
+        response = await completion_with_tools(
                 wrap=self.oa_wrap,
                 model=self.model,
                 temperature=self.temperature,
@@ -139,14 +140,15 @@ a potential form of verification, not as the actual answer.
                 stream=False)  # Always false for tool-related completions
 
         # For non-streaming, we expect a single response
-        response_text = next(response)
-        logmsg(f"Full response (len={len(response_text)}): {response_text}")
-        return response_text
+        async for response_text in response:
+            logmsg(f"Full response (len={len(response_text)}): {response_text}")
+            return response_text
+        return ""
 
-    def gen_completion_ret_json(
+    async def gen_completion_ret_json(
             self, instructions, convo,
             exclude_tools, tools_user_data=None):
-        response = self.genCompletion(
+        response = await self.genCompletion(
             instructions=instructions,
             convo=convo,
             exclude_tools=exclude_tools,
@@ -179,13 +181,13 @@ a potential form of verification, not as the actual answer.
         logmsg(f"Final JSON response (len={len(json_response)}): {json_response}")
         return json_response
 
-    def GenSummary(self):
+    async def GenSummary(self):
         convo = self.buildConvoString(1000)
-        return self.genCompletion(self.instructionsForSummary, convo, None)
+        return await self.genCompletion(self.instructionsForSummary, convo, None)
 
-    def GenCritique(self):
+    async def GenCritique(self):
         convo = self.buildConvoString(1000)
-        return self.genCompletion(self.instructionsForCritique, convo, None)
+        return await self.genCompletion(self.instructionsForCritique, convo, None)
 
     @staticmethod
     def extract_first_json_object(response):
@@ -231,7 +233,7 @@ a potential form of verification, not as the actual answer.
             logerr(f"Error parsing JSON: {str(e)}")
             return {}
 
-    def GenFactCheck(self, tools_user_data):
+    async def GenFactCheck(self, tools_user_data):
         n = len(self.srcMessages)
         logmsg(f"GenFactCheck: Total messages: {n}")
         if n == 0:
@@ -248,7 +250,6 @@ a potential form of verification, not as the actual answer.
 
         # Only add context section if there are messages before the fact-checking section
         if staIdx < fcStartIdx:
-            #convo += "## Begin context for fact-checking. Context-only DO NOT fact-check\n"
             convo += "<context_for_fact_checking>\n"
             for index in range(staIdx, fcStartIdx):
                 srcMsg = self.srcMessages[index]
@@ -256,22 +257,19 @@ a potential form of verification, not as the actual answer.
             convo += "</context_for_fact_checking>\n"
 
         # Fact-checking section
-        #convo += "## Begin statements to fact-check. DO fact-check below\n"
         convo += "<statements_to_fact_check>\n"
         for index in range(fcStartIdx, n):
             srcMsg = self.srcMessages[index]
             convo += self.makeConvoMessage(srcMsg['src_id'], srcMsg['role'], srcMsg['content'])
         convo += "</statements_to_fact_check>\n"
 
-        #logmsg(f"GenFactCheck: Conversation for fact-checking:\n{convo}")
-
-        return self.gen_completion_ret_json(
+        return await self.gen_completion_ret_json(
             instructions=self.instructionsForFactCheck,
             convo=convo,
             exclude_tools=None, # All tools for fact-checking
             tools_user_data=tools_user_data)
 
-    def gen_research(self, query, tools_user_data):
+    async def gen_research(self, query, tools_user_data):
         """ Generate a research completion
                 :param query: The query to research
                 :param tools_user_data: The user data to pass to the tools
@@ -298,8 +296,7 @@ a potential form of verification, not as the actual answer.
         convo += "</research_query>\n"
 
         exclude_tools = ["ask_research_assistant"]
-        #logmsg(f"Conversation for research:\n{convo}")
-        response = self.genCompletion(
+        response = await self.genCompletion(
             instructions=self.instructionsForResearch,
             convo=convo,
             exclude_tools=exclude_tools,

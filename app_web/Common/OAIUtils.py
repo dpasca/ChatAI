@@ -367,7 +367,8 @@ async def completion_with_tools_async(
         if stream_do_stop and not did_call_tools:
             break
 
-def completion_with_tools(
+#==================================================================
+async def completion_with_tools(
         wrap: OpenAIWrapper,
         model: str,
         temperature: float,
@@ -375,94 +376,17 @@ def completion_with_tools(
         role_and_content_msgs: List[Dict[str, str]],
         exclude_tools=None,
         tools_user_data=None,
-        stream=False) -> Iterator[str]:
-
-    logmsg("[completion_with_tools] Starting")
-
-    try:
-        logmsg("[completion_with_tools] Trying to get running loop")
-        loop = asyncio.get_running_loop()
-        logmsg("[completion_with_tools] In async context")
-
-        # Create a new event loop for synchronous execution
-        sync_loop = asyncio.new_event_loop()
-
-        def run_sync():
-            asyncio.set_event_loop(sync_loop)
-            result_queue = queue.Queue()
-
-            async def process_generator():
-                try:
-                    async for msg in completion_with_tools_async(
-                        wrap, model, temperature, instructions,
-                        role_and_content_msgs, exclude_tools,
-                        tools_user_data, stream):
-                        result_queue.put(('msg', msg))
-                    result_queue.put(('done', None))
-                except Exception as e:
-                    logerr(f"[process_generator] Error: {str(e)}")
-                    result_queue.put(('error', e))
-
-            sync_loop.run_until_complete(process_generator())
-            return result_queue
-
-        # Run in a separate thread to avoid event loop conflicts
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            result_queue = pool.submit(run_sync).result()
-
-        # Yield results from the queue
-        while True:
-            msg_type, msg = result_queue.get()
-            if msg_type == 'error':
-                raise msg
-            elif msg_type == 'done':
-                break
-            else:
-                yield msg
-
-    except RuntimeError:
-        logmsg("[completion_with_tools] No running loop, creating new one")
-        loop = get_or_create_eventloop()
-        result_queue = queue.Queue()
-
-        async def consume_generator() -> None:
-            try:
-                async for msg in completion_with_tools_async(
-                    wrap, model, temperature, instructions,
-                    role_and_content_msgs, exclude_tools,
-                    tools_user_data, stream):
-                    if stream:
-                        #logmsg(f"[consume_generator] Streaming message: {msg[:100]}...")
-                        result_queue.put(('msg', msg))
-                    else:
-                        #logmsg(f"[consume_generator] Got message: {msg[:100]}...")
-                        result_queue.put(('msg', msg))
-                        break  # Only take the first message for non-streaming
-                result_queue.put(('done', None))
-            except Exception as e:
-                logerr(f"[consume_generator] Error: {str(e)}")
-                result_queue.put(('error', e))
-
-        loop.run_until_complete(consume_generator())
-
-        # For streaming mode, yield each message as it comes
-        if stream:
-            while True:
-                msg_type, msg = result_queue.get()
-                if msg_type == 'error':
-                    raise msg
-                elif msg_type == 'done':
-                    break
-                else:
-                    yield msg
-        # For non-streaming mode, return the single message
-        else:
-            msg_type, msg = result_queue.get()
-            if msg_type == 'error':
-                raise msg
-            elif msg_type == 'msg':
-                yield msg
+        stream=False) -> AsyncGenerator[str, None]:
+    """Async version of completion_with_tools that uses async/await throughout"""
+    return completion_with_tools_async(
+        wrap=wrap,
+        model=model,
+        temperature=temperature,
+        instructions=instructions,
+        role_and_content_msgs=role_and_content_msgs,
+        exclude_tools=exclude_tools,
+        tools_user_data=tools_user_data,
+        stream=stream)
 
 def get_tools(exclude_tools=None):
     tools = []

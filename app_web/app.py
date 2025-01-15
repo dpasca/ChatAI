@@ -20,6 +20,9 @@ import pickle
 import shutil
 from datetime import datetime, timedelta
 import atexit
+import asyncio
+from typing import Any, Dict, Optional, Callable, Union, List
+import pytz
 
 # Update the path for the modules below
 from Common.OpenAIWrapper import OpenAIWrapper
@@ -237,15 +240,106 @@ if os.getenv("DO_STORAGE_CONTAINER") is not None:
 
 #===============================================================================
 # Initialize the tools
+def local_get_user_info_wrapper(args):
+    """Wrapper to match the expected function signature"""
+    logmsg(f"[local_get_user_info_wrapper] Called with args: {args}")
+    if 'tools_user_data' not in args:
+        logwarn("[local_get_user_info_wrapper] No tools_user_data in args")
+        return {}
+    result = client_get_user_info(client_id=args['tools_user_data'])
+    logmsg(f"[local_get_user_info_wrapper] Returning: {result}")
+    return result
+
+def local_get_msg_thread_wrapper(args):
+    """Wrapper to match the expected function signature"""
+    logmsg(f"[local_get_msg_thread_wrapper] Called with args: {args}")
+    if 'tools_user_data' not in args:
+        logwarn("[local_get_msg_thread_wrapper] No tools_user_data in args")
+        return None
+    result = client_get_msg_thread(client_id=args['tools_user_data'])
+    logmsg(f"[local_get_msg_thread_wrapper] Returning: {result}")
+    return result
+
+# Create closure wrappers that match the expected signatures
+def create_user_info_wrapper() -> Callable[[Optional[dict]], dict]:
+    def wrapper(arguments: Optional[dict] = None) -> dict:
+        logmsg(f"[create_user_info_wrapper] Called with args: {arguments}")
+        # Get client ID from the arguments
+        client_id = None
+        if arguments and 'tools_user_data' in arguments:
+            client_id = arguments['tools_user_data']
+
+        if not client_id:
+            logwarn("[create_user_info_wrapper] No client ID found in arguments")
+            return {}
+        result = client_get_user_info(client_id=client_id)
+        logmsg(f"[create_user_info_wrapper] Returning: {result}")
+        return result
+    return wrapper
+
+def create_msg_thread_wrapper() -> Callable[[Optional[dict]], MsgThread]:
+    thread_local = threading.local()
+
+    def set_client_id(client_id: str) -> None:
+        thread_local.client_id = client_id
+
+    def wrapper(arguments: Optional[dict] = None) -> MsgThread:
+        logmsg(f"[create_msg_thread_wrapper] Called with args: {arguments}")
+        try:
+            # First try to get client ID from thread local
+            client_id = thread_local.client_id
+        except AttributeError:
+            # If not in thread local, try to get from arguments
+            if arguments and 'tools_user_data' in arguments:
+                client_id = arguments['tools_user_data']
+                thread_local.client_id = client_id  # Store for future use
+            else:
+                logwarn("[create_msg_thread_wrapper] No client ID found in arguments or thread local")
+                raise ValueError("No client ID set")
+
+        result = client_get_msg_thread(client_id=client_id)
+        if not result:
+            logwarn("[create_msg_thread_wrapper] No message thread found")
+            raise ValueError("No message thread found")
+        logmsg(f"[create_msg_thread_wrapper] Returning: {result}")
+        return result
+
+    wrapper.set_client_id = set_client_id  # Attach the setter to the wrapper
+    return wrapper
+
+# Create the wrappers once at module level
+user_info_wrapper = create_user_info_wrapper()
+msg_thread_wrapper = create_msg_thread_wrapper()
+
+# Log the available tools before initialization
+logmsg("Available tools before initialization:")
+for tool in AssistTools.tool_items:
+    logmsg(f"  - {tool.name}: {tool.definition}")
+
+# Initialize the tools with proper function signatures
 AssistTools.initialize_tools(
     enable_rag=config.get('enable_rag', False),
     rag_query_instructions=config.get('rag_query_instructions'),
     enable_web_search=config.get('enable_web_search', False),
     support_enable_research_assistant=config.get('support_enable_research_assistant', True),
     storage=_storage,
-    super_get_user_info_=local_get_user_info,
-    super_get_main_MsgThread_=local_get_main_MsgThread,
+    super_get_user_info_=user_info_wrapper,
+    super_get_main_MsgThread_=msg_thread_wrapper,
     )
+
+# Log the available tools after initialization
+logmsg("Available tools after initialization:")
+for tool in AssistTools.tool_items:
+    logmsg(f"  - {tool.name}: {tool.definition}")
+logmsg("Tool items dict contents:")
+for name, tool in AssistTools.tool_items_dict.items():
+    logmsg(f"  - {name}: {tool.function}")
+
+# Log the tools that will be available to the assistant
+tools = OAIUtils.get_tools()
+logmsg("Tools available to assistant:")
+for tool in tools:
+    logmsg(f"  - {tool['function']['name']}: {tool['function']['description']}")
 
 #===============================================================================
 # Add these functions to handle storage
@@ -415,8 +509,17 @@ def clear_chat():
 #    return redirect(url_for('index'))
 
 #===============================================================================
-def make_client_room(client_id):
-    return f'client_{client_id}'
+def make_client_room(client_id: str) -> str:
+    """Create a room name for a client ID"""
+    if not client_id:
+        raise ValueError("Client ID cannot be None or empty")
+    return f"client_{client_id}"
+
+#===============================================================================
+async def get_file_content_bytes(file_id: str) -> bytes:
+    """Get file content as bytes from OpenAI"""
+    response = await _oa_wrap.GetFileContent(file_id)
+    return await response.aread()
 
 #===============================================================================
 def make_file_url(file_id, simple_name):
@@ -436,8 +539,8 @@ def make_file_url(file_id, simple_name):
 
     if not _storage.FileExists(file_path):
         logmsg(f"Downloading file {file_id} from source...")
-        data = _oa_wrap.GetFileContent(file_id)
-        data_io = BytesIO(data.read())
+        data = asyncio.run(get_file_content_bytes(file_id))
+        data_io = BytesIO(data)
         logmsg(f"Uploading file {file_path} to storage...")
         _storage.upload_file(data_io, file_path)
 
@@ -503,36 +606,56 @@ def get_history():
     return disable_cache(jsonify({'messages': client_get_msg_thread(client_id).make_messages_for_display()})), 200
 
 #===============================================================================
+def get_client_id_from_request() -> Optional[str]:
+    """Get the client ID from the request arguments."""
+    client_id = request.args.get('CustomClientId')  # type: ignore
+    if not client_id:
+        logerr("No client ID found in request")
+        return None
+    return client_id
+
 @socketio.on('connect')
 def handle_connect():
-    client_id = request.args.get('CustomClientId')
+    client_id = get_client_id_from_request()
+    if not client_id:
+        return
+
     get_app_client(client_id).connected = True
     client_room = make_client_room(client_id)
     join_room(client_room)
-    logmsg(f"Client connected. Req.Session ID: {request.sid}, Custom Client ID: {client_id}, joined room: {client_room}")
+    logmsg(f"Client connected. Req.Session ID: {request.sid}, Custom Client ID: {client_id}, joined room: {client_room}")  # type: ignore
 
 @socketio.on('connect_ack')
 def handle_connect_ack():
-    client_id = request.args.get('CustomClientId')  # Retrieved from the connection query
+    client_id = get_client_id_from_request()
+    if not client_id:
+        return
+
     get_app_client(client_id).connected = True
-    logmsg(f"Responding to connect_ack. Req.Session ID: {request.sid}, Custom Client ID: {client_id}")
+    logmsg(f"Responding to connect_ack. Req.Session ID: {request.sid}, Custom Client ID: {client_id}")  # type: ignore
     emit('connected', {'custom_client_id': client_id})
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    client_id = request.args.get('CustomClientId')
+    client_id = get_client_id_from_request()
+    if not client_id:
+        return
+
     get_app_client(client_id).connected = False
-    logmsg(f"Client disconnected. Session ID: {request.sid}")
+    logmsg(f"Client disconnected. Session ID: {request.sid}")  # type: ignore
 
 @socketio.on('reconnect')
 def handle_reconnect():
-    client_id = request.args.get('CustomClientId')
+    client_id = get_client_id_from_request()
+    if not client_id:
+        return
+
     get_app_client(client_id).connected = True
-    logmsg(f"Client reconnected. Session ID: {request.sid}")
+    logmsg(f"Client reconnected. Session ID: {request.sid}")  # type: ignore
 
 #===============================================================================
 @app.route('/get_addendums', methods=['GET'])
-def get_addendums():
+async def get_addendums():
     logmsg("In route /get_addendums")
     # Send to index page if we don't have a working message thread
     if (client_id := request.cookies.get('CustomClientId')) is None:
@@ -550,7 +673,7 @@ def get_addendums():
         return jsonify({'addendums': [], 'message': 'No pending fact-checks', 'final': True}), 200
 
     # We get the fact checks directly in JSON format
-    fc_str = client_get_msg_thread(client_id).gen_fact_check(tools_user_data=client_id)
+    fc_str = await client_get_msg_thread(client_id).gen_fact_check(tools_user_data=client_id)
     if fc_str is None:
         logmsg(f"No fact-checks generated for client {client_id}")
         return jsonify({'addendums': [], 'message': 'No pending fact-checks', 'final': True}), 200
@@ -563,16 +686,16 @@ def get_addendums():
         logerr(f"Error parsing fact-checks for client {client_id}: {e}")
         return jsonify({'addendums': [], 'message': 'Error parsing fact-checks', 'final': True}), 200
 
-    #logmsg(f"FC JSON {fc}")
-
     return jsonify({'addendums': [fc], 'final': True}), 200
 
 #===============================================================================
-def stream_openai_response(client_id):
+async def stream_openai_response(client_id):
+    # Set the client ID in the thread-local storage for the message thread wrapper
+    msg_thread_wrapper.set_client_id(client_id)
 
     mt = client_get_msg_thread(client_id)
 
-    response = OAIUtils.completion_with_tools(
+    response = await OAIUtils.completion_with_tools(
         wrap=_oa_wrap,
         model=config["model_version"],
         temperature=config["model_temperature"],
@@ -590,42 +713,27 @@ def stream_openai_response(client_id):
     client_room = make_client_room(client_id)
     logmsg(f"Streaming to room {client_room}")
 
-    socketio.emit('stream', {'src_id': src_id, 'text': '$DUMMY_TOKEN$'}, room=client_room)
+    # Use socketio.emit for background tasks
+    socketio.emit('stream', {'src_id': src_id, 'text': '$DUMMY_TOKEN$'}, room=client_room)  # type: ignore
 
     # Send the response in parts and collect the full text
     reply_text = ""
-    def send_full_reply():
-        socketio.emit('stream', {'src_id': src_id, 'text': reply_text, 'is_full_msg': True}, room=client_room)
-
-    part_cnt = 0
-    for part in response:
+    async for part in response:
         if part is None:
-            #print("$END_TOKEN$")
             continue
         reply_text += part
-        #print(part, end="")
-
-        # Resend the full text for the first few parts
-        # This is a HACK for the issue of the first part getting an error
-        part_cnt += 1
-        if part_cnt <= 10:
-            send_full_reply()
-            continue
 
         try:
-            socketio.emit('stream', {'src_id': src_id, 'text': part}, room=client_room)
+            socketio.emit('stream', {'src_id': src_id, 'text': part}, room=client_room)  # type: ignore
         except Exception as e:
             logerr(f"Error sending message to session {client_room}: {e}")
             break
 
     mt.update_message(src_id, reply_text)
 
-    # HACK: Set the full reply at the end once again
-    send_full_reply()
-
-    # End the stream with a special signal, e.g., '$END_TOKEN$'
+    # End the stream with a special signal
     try:
-        socketio.emit('stream', {'src_id': src_id, 'text': '$END_TOKEN$'}, room=client_room)
+        socketio.emit('stream', {'src_id': src_id, 'text': '$END_TOKEN$'}, room=client_room)  # type: ignore
 
         # Save the client
         save_client(client_id)
@@ -643,9 +751,9 @@ def stream_openai_response(client_id):
 import pytz
 from datetime import datetime
 
-def make_user_metadata_dict(client_id):
+def make_user_metadata_dict(client_id) -> Dict[str, Any]:
     # Create a dictionary with the current Unix timestamp
-    msg_metadata = {'unix_time': int(time.time())}
+    msg_metadata: Dict[str, Any] = {'unix_time': int(time.time())}
 
     if uinfo := client_get_user_info(client_id):
         logmsg(f"User info: {uinfo}")
@@ -667,10 +775,12 @@ def make_user_metadata_dict(client_id):
 #==================================================================
 @socketio.on('send_message')
 def handle_send_message(json, methods=['GET', 'POST']):
-
     dump_memory_usage("send_message START")
 
     client_id = request.args.get('CustomClientId')
+    if not client_id:
+        logerr("No client ID found in request")
+        return jsonify({'status': 'error', 'message': 'No client ID found'})
 
     client_room = make_client_room(client_id)
 
@@ -687,7 +797,7 @@ def handle_send_message(json, methods=['GET', 'POST']):
     try:
         # Ensure there's an active message thread
         if not client_has_msg_thread(client_id):
-            emit('stream', {'text': 'No message thread loaded, please reload the page.', 'isError': True}, room=client_room)
+            socketio.emit('stream', {'text': 'No message thread loaded, please reload the page.', 'isError': True}, room=client_room)  # type: ignore
             dump_memory_usage("send_message END")
             return  # Exit if there's no usable message thread
 
@@ -703,11 +813,15 @@ def handle_send_message(json, methods=['GET', 'POST']):
 
         logmsg(f"User message: {user_msg}")
 
-        # Call this new streaming function instead of appending replies directly
-        threading.Thread(
-            target=stream_openai_response,
-            args=(client_id,) # NOTE: needs the comma to make it a tuple
-            ).start()
+        # Start the async streaming response in the background
+        # We need to wrap the coroutine in a function that handles the event loop
+        def run_stream():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(stream_openai_response(client_id))
+            loop.close()
+
+        socketio.start_background_task(run_stream)
 
         dump_memory_usage("send_message END")
 
@@ -717,7 +831,7 @@ def handle_send_message(json, methods=['GET', 'POST']):
                         'user_msg_id': user_msg['src_id']})
     except Exception as e:
         logerr(f"KeyError: {str(e)}")
-        emit('stream', {'text': 'The session has been disconnected. Please reload the page.', 'isError': True}, room=client_room)
+        socketio.emit('stream', {'text': 'The session has been disconnected. Please reload the page.', 'isError': True}, room=client_room)  # type: ignore
         dump_memory_usage("send_message END")
         return jsonify({'status': 'error', 'message': 'Session disconnected'})
 

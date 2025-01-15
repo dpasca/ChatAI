@@ -15,20 +15,19 @@ T = TypeVar('T')
 class OpenAIWrapper:
     def __init__(self, api_key):
         # Create both sync and async clients
-        # We keep the sync client for backward compatibility
+        # We keep the sync client for backward compatibility with other APIs
         self.client = OpenAI(api_key=api_key)
         self.async_client = AsyncOpenAI(api_key=api_key)
 
     #==================================================================
-    # Async versions of the API calls
-    async def CreateCompletionAsync(
+    async def CreateCompletion(
             self, 
             model: str,
             messages: List[Dict[str, str]],
             temperature: float = 0.7,
             tools: Optional[List[Dict[str, Any]]] = None,
-            stream: bool = False) -> Union[ChatCompletion, AsyncGenerator[Dict[str, Any], None]]:
-        """Async version of CreateCompletion that matches the sync version's interface"""
+            stream: bool = False) -> Any:  # Return type is Any to handle both streaming and non-streaming
+        """Async version of CreateCompletion"""
         # Cast the parameters to Any to bypass type checking
         params: Dict[str, Any] = {
             "model": model,
@@ -38,37 +37,17 @@ class OpenAIWrapper:
             "tool_choice": "auto" if tools else None,
             "stream": stream
         }
-        # For streaming, we need to handle the response differently
-        response = await self.async_client.chat.completions.create(**params)
-        if stream:
-            async def response_generator() -> AsyncGenerator[Dict[str, Any], None]:
-                async for chunk in response:
-                    yield chunk
-            return response_generator()
-        else:
-            return response
+        
+        # The OpenAI API returns either a ChatCompletion or a streamable response
+        return await self.async_client.chat.completions.create(**params)
 
-    #==================================================================
-    # Sync version for backward compatibility
-    def CreateCompletion(self, model, messages, temperature=0.7, tools=None, stream=False):
-        """Synchronous version of CreateCompletion for backward compatibility"""
-        # Use the event loop to run the async version
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(
-            self.CreateCompletionAsync(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                tools=tools,
-                stream=stream))
+    # Alias for backward compatibility
+    CreateCompletionAsync = CreateCompletion
 
     #==== Files
-    async def GetFileContentAsync(self, file_id):
+    async def GetFileContent(self, file_id):
         """Async version of GetFileContent"""
         return await self.async_client.files.content(file_id)
 
-    def GetFileContent(self, file_id):
-        """Sync version of GetFileContent for backward compatibility"""
-        # Use the event loop to run the async version
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self.GetFileContentAsync(file_id))
+    # Alias for backward compatibility
+    GetFileContentAsync = GetFileContent

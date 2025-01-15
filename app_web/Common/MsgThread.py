@@ -152,8 +152,22 @@ class MsgThread(BaseModel):
         for msg in self.messages:
             self.judge.AddMessage(msg)
 
-    def gen_fact_check(self, tools_user_data=None):
-        return self.judge.GenFactCheck(tools_user_data)
+    async def gen_fact_check(self, tools_user_data: Optional[str] = None) -> str:
+        """Generate fact checks for the messages in the thread
+        
+        Args:
+            tools_user_data: Optional user data to pass to the tools
+        
+        Returns:
+            str: A JSON string containing the fact checks, or "{}" if no fact checks are available
+        """
+        if not self.judge:
+            logwarn("No judge available for fact checking")
+            return "{}"
+        result = await self.judge.GenFactCheck(tools_user_data)
+        if result is None:
+            return "{}"
+        return result
 
     def create_message(self, role, content, src_id=None) -> dict:
         # Wrap content in a list containing one dictionary
