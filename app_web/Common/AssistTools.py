@@ -203,7 +203,7 @@ def get_user_local_time(arguments=None):
         "user_timezone": timezone }
 """
 
-def ask_research_assistant(arguments: Optional[dict] = None) -> str:
+async def ask_research_assistant(arguments: Optional[dict] = None) -> str:
     """Ask the research assistant for help."""
     # Ensure we have all the necessary args
     if not arguments or not (arguments.get("query") or arguments.get("tools_user_data")):
@@ -221,7 +221,7 @@ def ask_research_assistant(arguments: Optional[dict] = None) -> str:
         return perform_web_search(arguments)
 
     try:
-        result = msg_thread.judge.gen_research(
+        result = await msg_thread.judge.gen_research(
             query=arguments["query"],
             tools_user_data=arguments["tools_user_data"])
         return str(result) if result is not None else "No research results available"

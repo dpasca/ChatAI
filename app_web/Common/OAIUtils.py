@@ -12,7 +12,7 @@ import asyncio
 import threading
 from .OpenAIWrapper import OpenAIWrapper
 from . import AssistTools
-from typing import List, Dict, Union, Any, AsyncGenerator, Iterator
+from typing import List, Dict, Union, Any, AsyncGenerator, AsyncIterator, Optional
 import queue
 from openai.types.chat import ChatCompletion
 
@@ -75,59 +75,31 @@ def handle_multi_tool_use(call, tools_user_data):
     return messages
 
 #==================================================================
-def apply_tools(tool_calls, wrap, tools_user_data) -> list:
-    logmsg(f"Tool calls: {tool_calls}")
-    messages = []
-    # Process each tool/function call
-    for call in tool_calls:
-        if call.function.name is None:
-            logwarn(f"Tool call with missing name: {call}")
-            continue
-
-        # Special case for OpenAI's bug
-        if call.function.name == "multi_tool_use.parallel":
-            try:
-                messages.extend(handle_multi_tool_use(call, tools_user_data))
-            except Exception as e:
-                logerr(f"Error handling multi_tool_use.parallel: {e}")
-            continue
-
-        name = call.function.name
-        try:
-            args = json.loads(call.function.arguments) if call.function.arguments else {}
-        except:
-            logerr(f"Tool call with invalid arguments: {call}")
-            continue
+async def apply_tools(tool_calls, wrap, tools_user_data=None):
+    """Apply the tool calls and return the results."""
+    results = []
+    for tool_call in tool_calls:
+        name = tool_call.function.name
+        args = json.loads(tool_call.function.arguments)
+        if tools_user_data is not None:
+            args['tools_user_data'] = tools_user_data
 
         logmsg(f"Tool call: {name}({args})")
-
-        # Add wrap and tools_user_data to the arguments
-        #args["wrap"] = wrap
-        args["tools_user_data"] = tools_user_data
-
-        # Look up the function in the dictionary and call it
-        if name in AssistTools.tool_items_dict:
-            function_response = AssistTools.tool_items_dict[name].function(args)
-        else:
-            function_response = AssistTools.fallback_tool_function(name, args)
-
-        #logmsg(f"Tool respose: {function_response}")
-
-        content = None
         try:
-            content = json.dumps(function_response)
-        except:
-            content = function_response.response
+            if name in AssistTools.tool_items_dict:
+                function = AssistTools.tool_items_dict[name].function
+                if asyncio.iscoroutinefunction(function):
+                    function_response = await function(args)
+                else:
+                    function_response = function(args)
+            else:
+                function_response = AssistTools.fallback_tool_function(name, args)
+            results.append(function_response)
+        except Exception as e:
+            logerr(f"Error in tool call {name}: {e}")
+            results.append(f"Error in tool call {name}: {e}")
 
-        # Extend conversation with function response
-        messages.append({
-            "tool_call_id": call.id,
-            "role": "tool",
-            "name": name,
-            "content": content,
-        })
-
-    return messages
+    return results
 
 #==================================================================
 async def handle_stream(response, wrap, messages, tools_user_data):
@@ -233,139 +205,81 @@ async def handle_stream(response, wrap, messages, tools_user_data):
 
 #==================================================================
 async def completion_with_tools_async(
-        wrap: OpenAIWrapper,
-        model: str,
-        temperature: float,
-        instructions: str,
-        role_and_content_msgs: List[Dict[str, str]],
-        exclude_tools=None,
-        tools_user_data=None,
-        stream=False) -> AsyncGenerator[str, None]:
-
-    # Get available tools
-    tools = get_tools(exclude_tools)
-    messages = prepare_messages(instructions, role_and_content_msgs)
-
-    if not stream:
-        logmsg("[completion_with_tools_async] Non-streaming path")
-        response: Union[ChatCompletion, AsyncGenerator[Dict[str, Any], None]] = await wrap.CreateCompletionAsync(
-            model=model,
-            temperature=temperature,
-            messages=messages,
-            tools=tools,
-            stream=False)
-
-        if isinstance(response, AsyncGenerator):
-            raise ValueError("Expected ChatCompletion but got AsyncGenerator")
-
-        message = response.choices[0].message
-        if not hasattr(message, 'tool_calls') or not message.tool_calls:
-            logmsg("[completion_with_tools_async] No tool calls, yielding message content")
-            content = message.content or ""
-            if instructions and "Reply UNIQUELY with a pure raw JSON string" in instructions:
-                try:
-                    # Try to parse as JSON to validate
-                    json.loads(content)
-                    yield content
-                except json.JSONDecodeError:
-                    # If not valid JSON, try to extract the first JSON object
-                    from .ConvoJudge import ConvoJudge
-                    fixed_response = ConvoJudge.extract_first_json_object(content)
-                    if fixed_response:
-                        yield json.dumps(fixed_response)
-                    else:
-                        yield "{}"
-            else:
-                yield content
-            return
-
-        logmsg("[completion_with_tools_async] Processing tool calls")
-        tools_out = apply_tools(message.tool_calls, wrap, tools_user_data)
-        msg_dict = {
-            "role": "assistant",
-            "content": message.content or "",
-            "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments}
-                } for tc in message.tool_calls
-            ]
-        }
-        messages.append(msg_dict)
-        messages.extend(tools_out)
-
-        logmsg("[completion_with_tools_async] Making second completion call")
-        response2: Union[ChatCompletion, AsyncGenerator[Dict[str, Any], None]] = await wrap.CreateCompletionAsync(
-            model=model,
-            temperature=temperature,
-            messages=messages,
-            stream=False)
-
-        if isinstance(response2, AsyncGenerator):
-            raise ValueError("Expected ChatCompletion but got AsyncGenerator")
-
-        # For fact-checking, we need to ensure we get a valid JSON response
-        content = response2.choices[0].message.content or ""
-        if instructions and "Reply UNIQUELY with a pure raw JSON string" in instructions:
-            try:
-                # Try to parse as JSON to validate
-                json.loads(content)
-                yield content
-            except json.JSONDecodeError:
-                # If not valid JSON, try to extract the first JSON object
-                from .ConvoJudge import ConvoJudge
-                fixed_response = ConvoJudge.extract_first_json_object(content)
-                if fixed_response:
-                    yield json.dumps(fixed_response)
-                else:
-                    yield "{}"
-        else:
-            yield content
-        return
-
+    wrap,
+    model: str,
+    temperature: float,
+    instructions: str,
+    role_and_content_msgs: list,
+    exclude_tools: Optional[list] = None,
+    tools_user_data: Optional[str] = None,
+    stream: bool = False,
+    ) -> AsyncGenerator[str, None]:
+    """
+    Create a completion with tools, async version.
+    """
     logmsg("[completion_with_tools_async] Starting streaming path")
 
-    # Only make one call initially
-    params = {
-        "model": model,
-        "temperature": temperature,
-        "messages": messages,
-        "stream": True
-    }
+    # Get the tools list
+    tools = get_tools(exclude_tools)
 
-    # Only include tools in the first call
-    if tools:
-        params["tools"] = tools
+    # Create the messages list
+    messages = prepare_messages(instructions, role_and_content_msgs)
 
-    response = await wrap.CreateCompletionAsync(**params)
+    # Create the completion
+    response = await wrap.CreateCompletion(
+        model=model,
+        messages=messages,
+        tools=tools,
+        temperature=temperature,
+        stream=stream)
 
-    did_call_tools = False
-    async for part, tools_called, stream_do_stop in handle_stream(response, wrap, messages, tools_user_data):
-        if part:
-            yield part
+    if stream:
+        # Streaming path
+        async for content, has_tool_calls, is_done in handle_stream(response, wrap, messages, tools_user_data):
+            if content:
+                yield content
+            if is_done:
+                break
+    else:
+        # Non-streaming path
+        logmsg("[completion_with_tools_async] Non-streaming path")
+        message = response.choices[0].message
+        if message.content:
+            logmsg("[completion_with_tools_async] No tool calls, yielding message content")
+            yield message.content
+        elif message.tool_calls:
+            logmsg("[completion_with_tools_async] Processing tool calls")
+            tools_out = await apply_tools(message.tool_calls, wrap, tools_user_data)
+            # Create a new completion with the tool results
+            new_messages = messages.copy()
+            new_messages.append({
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                    } for tc in message.tool_calls
+                ]
+            })
+            for i, tool_out in enumerate(tools_out):
+                new_messages.append({
+                    "role": "tool",
+                    "tool_call_id": message.tool_calls[i].id,
+                    "name": message.tool_calls[i].function.name,
+                    "content": str(tool_out)
+                })
 
-        if tools_called:
-            did_call_tools = True
-            logmsg("[completion_with_tools_async] Making final completion after tool calls")
-            # Make one more call without tools to get the final response
-            final_response = await wrap.CreateCompletionAsync(
+            # Make the second completion call
+            logmsg("[completion_with_tools_async] Making second completion call")
+            second_response = await wrap.CreateCompletion(
                 model=model,
+                messages=new_messages,
                 temperature=temperature,
-                messages=messages,
-                stream=True,
-                tools=None  # Explicitly set tools to None for final response
-            )
-            async for final_part, _, final_stop in handle_stream(final_response, wrap, messages, tools_user_data):
-                if final_part:
-                    #logmsg(f"[completion_with_tools_async] Final response part: {final_part[:100]}...")
-                    yield final_part
-                if final_stop:
-                    break
-            break
+                stream=stream)
 
-        if stream_do_stop and not did_call_tools:
-            break
+            second_message = second_response.choices[0].message
+            yield second_message.content
 
 #==================================================================
 async def completion_with_tools(
@@ -395,8 +309,14 @@ def get_tools(exclude_tools=None):
             tools.append({"type": "function", "function": item.definition})
     return tools
 
-def prepare_messages(instructions: str, role_and_content_msgs: List[Dict[str, str]]):
-    return [
-        {"role": "system", "content": instructions},
-    ] + role_and_content_msgs
+def prepare_messages(instructions: str, role_and_content_msgs: list) -> list:
+    """Prepare messages for completion."""
+    messages = []
+    if instructions:
+        messages.append({
+            "role": "system",
+            "content": instructions
+        })
+    messages.extend(role_and_content_msgs)
+    return messages
 

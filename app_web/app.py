@@ -818,8 +818,24 @@ def handle_send_message(json, methods=['GET', 'POST']):
         def run_stream():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(stream_openai_response(client_id))
-            loop.close()
+            try:
+                # Create and run the task
+                task = loop.create_task(stream_openai_response(client_id))
+                loop.run_until_complete(task)
+            except Exception as e:
+                logerr(f"Error in run_stream: {e}")
+            finally:
+                try:
+                    # Clean up any pending tasks
+                    pending = asyncio.all_tasks(loop)
+                    for task in pending:
+                        task.cancel()
+                        try:
+                            loop.run_until_complete(asyncio.gather(task, return_exceptions=True))
+                        except asyncio.CancelledError:
+                            pass
+                finally:
+                    loop.close()
 
         socketio.start_background_task(run_stream)
 
