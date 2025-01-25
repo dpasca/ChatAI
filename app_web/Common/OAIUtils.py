@@ -167,7 +167,7 @@ async def handle_stream(response, wrap, messages, tools_user_data):
         if full_calls and not accumulating_calls:
             fc_list = list(full_calls.values())
             # Processing the calls here
-            tools_out = apply_tools(fc_list, wrap, tools_user_data)
+            tools_out = await apply_tools(fc_list, wrap, tools_user_data)
 
             # Build the message that details the requested tool calls
             tc_reqs = []
@@ -319,4 +319,3 @@ def prepare_messages(instructions: str, role_and_content_msgs: list) -> list:
         })
     messages.extend(role_and_content_msgs)
     return messages
-

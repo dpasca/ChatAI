@@ -695,7 +695,8 @@ async def stream_openai_response(client_id):
 
     mt = client_get_msg_thread(client_id)
 
-    response = await OAIUtils.completion_with_tools(
+    # Get the async generator from completion_with_tools
+    response_gen = await OAIUtils.completion_with_tools(
         wrap=_oa_wrap,
         model=config["model_version"],
         temperature=config["model_temperature"],
@@ -718,21 +719,21 @@ async def stream_openai_response(client_id):
 
     # Send the response in parts and collect the full text
     reply_text = ""
-    async for part in response:
-        if part is None:
-            continue
-        reply_text += part
-
-        try:
-            socketio.emit('stream', {'src_id': src_id, 'text': part}, room=client_room)  # type: ignore
-        except Exception as e:
-            logerr(f"Error sending message to session {client_room}: {e}")
-            break
-
-    mt.update_message(src_id, reply_text)
-
-    # End the stream with a special signal
     try:
+        async for part in response_gen:
+            if part is None:
+                continue
+            reply_text += part
+
+            try:
+                socketio.emit('stream', {'src_id': src_id, 'text': part}, room=client_room)  # type: ignore
+            except Exception as e:
+                logerr(f"Error sending message to session {client_room}: {e}")
+                break
+
+        mt.update_message(src_id, reply_text)
+
+        # End the stream with a special signal
         socketio.emit('stream', {'src_id': src_id, 'text': '$END_TOKEN$'}, room=client_room)  # type: ignore
 
         # Save the client
@@ -741,11 +742,12 @@ async def stream_openai_response(client_id):
         # Do periodic checks
         periodic_check()
     except Exception as e:
-        logerr(f"Error sending $END_TOKEN$ message to session {client_room}: {e}")
-
-    if config['support_enable_factcheck']:
-        client_set_key(client_id, 'generate_fchecks', True)
-        logmsg(f"Set generate_fchecks to True for client {client_id}")
+        logerr(f"Error in stream_openai_response: {e}")
+        socketio.emit('stream', {'src_id': src_id, 'text': '$ERROR_TOKEN$'}, room=client_room)  # type: ignore
+    finally:
+        if config['support_enable_factcheck']:
+            client_set_key(client_id, 'generate_fchecks', True)
+            logmsg(f"Set generate_fchecks to True for client {client_id}")
 
 #==================================================================
 import pytz

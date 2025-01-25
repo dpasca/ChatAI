@@ -108,8 +108,10 @@ def fallback_tool_function(name: str, arguments: Any) -> Any:
 def ddgsTextSearch(query: str, max_results: int = 10) -> list:
     """Perform a DuckDuckGo text search."""
     try:
+        logmsg(f"Performing DuckDuckGo search for query: {query}")
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=max_results))
+            logmsg(f"Got {len(results)} results from DuckDuckGo")
             return results if results else []
     except Exception as e:
         logerr(f"DuckDuckGo search failed: {str(e)}")
@@ -218,7 +220,7 @@ async def ask_research_assistant(arguments: Optional[dict] = None) -> str:
     # If there is no main message thread, then perform a simple web search
     if msg_thread is None or not hasattr(msg_thread, 'judge') or msg_thread.judge is None:
         logwarn("No main message thread or judge found. Falling back to web search.")
-        return perform_web_search(arguments)
+        return await perform_web_search(arguments)
 
     try:
         result = await msg_thread.judge.gen_research(
